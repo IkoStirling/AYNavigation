@@ -1,6 +1,6 @@
 # AYNavigation
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 
 **Date:** 2026-10-23
 
@@ -18,6 +18,7 @@
 | `AYNavigation::Authoring` | Optional explicit versioned .nvg graph files, validation and replacement save |
 | `AYNavigation::Behavior` | Optional AYBehavior v0.2 orders/executor and MotionPort compatibility |
 | `AYNavigation::Entity` | Optional explicit native root kinematic motor over AYBehavior::Entity / AYEntityCore |
+| `AYNavigation::Physics` | Optional borrowed Jolt capsule motor and real grounded jump traversal; defaults OFF |
 
 ## Build and try
 
@@ -169,16 +170,40 @@ authoritative. Cross-region kinematic pose changes are rejected. Real portals mu
 the engine's connected-space authority in a custom motor/traversal; no duplicate portal
 topology or fake dynamic-body migration is installed here.
 
+## Physical movement and GPU scene
+
+Enable `AY_NAVIGATION_BUILD_PHYSICS=ON` with AYPhysics/Jolt and link `AYNavigation::Physics`.
+Create controllers through the normal physics facade, cross their creation barrier, construct
+`CharacterMotor(physicsWorld)` and call `attach(agent,character,region)`, then use it in Navigator.
+The motor borrows live handles; match Profile dimensions/up and use one exclusive input owner.
+It samples real completed feet/velocity, removes only grounded inward support bias relative to
+ground velocity, and requires physical grounded arrival. It never steps physics or writes Entity poses.
+Copy completed feet to Entity after physics; keep the services alive through all cleanup.
+
+`CharacterJumpTraversal` replaces the demo arc on explicit same-region links. It submits one
+grounded jump, uses actual airborne state for tangent steering/braking, and aligns only within
+a bounded landing error. Real collision, unsupported/wrong landing, queue refusal and timeout can
+fail. Forced cancel clears tangent input but leaves airborne gravity/collision running; the host
+owns emergency recovery. No pose teleport, animation, portal transfer or variable-gravity route is installed.
+
+[NavigationPlayground](../../Samples/NavigationPlayground/README.md) is a normal GameProject with
+a real `.scn`, Jolt controllers, GPU geometry, AYUI HUD/selection box and the existing `.nvg`
+authoring/order loop. Build `NavigationPlaygroundApp` using `AY_BUILD_NAVIGATION_PLAYGROUND=ON`
+in a3D client profile. This is separate from the GDI diagnostic examples above.
+
 ## Evidence and limits
 
 Tests: `AYNavigationCoreTest` (23 cases), `AYNavigationBehaviorTest` (6),
 `AYNavigationEntityTest` (3 real World cases), `AYNavigationAssetTest` (4),
 `AYNavigationWorldLabTest` (4) and both Windows native smoke tests.
+With Jolt enabled, `AYNavigationPhysicsTest` adds4 actual physics cases. The GPU sample has
+separate `navigation-playground-core`, `navigation-playground-host` and optional strict D3D11
+`navigation-playground-render` gates, with an actual screenshot and grounded-arrival evidence.
 The custom-space/custom-planner/custom-avoidance positive fixture uses a sphere domain and
 dogleg solver, independently of the graph implementation. Negative fixtures reject forged
 routes, stale results, unsafe avoidance, bad snapshots and invalid capacities.
 
-No NavMesh bake, grid/voxel backend, path spline sampler, physics jump/flight autopilot,
+No NavMesh bake, grid/voxel backend, path spline sampler, flight autopilot or animation traversal,
 general shape/crowd avoidance, runtime task/save codec, Resource/Cook/Pak registration, network protocol, checkpoint or deterministic
 simulation adapter is implemented. Native doubles and World motor are not lockstep authority.
 Numbers are finite/bounded; see [design.md](design.md), [engine integration](../../AYDocs/NAVIGATION-SYSTEM.md)

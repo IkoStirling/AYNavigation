@@ -1,6 +1,6 @@
 # AYNavigation design
 
-**Version:** 0.2.0
+**Version:** 0.3.0
 
 **Date:** 2026-10-23
 
@@ -198,6 +198,46 @@ actual fixed-step scheduling, lifetime and region handling. Windows smoke drives
 navigation messages and actual GDI paint. No production GPU, physics jump/flight, cross-platform,
 large-crowd/performance, Release or deterministic qualification is inferred.
 
-Future backends: NavMesh/grid/voxel, curve sampling, physical traversal/controllers, authoritative
+Future backends: NavMesh/grid/voxel, curve sampling, further physical/animation traversal, authoritative
 connected-space transfer adapters, editor asset/cook pipeline, richer shapes/crowd strategies,
 orientation-aware planning and registered deterministic state.
+
+## 9. Optional character physics (v0.3)
+
+AYNavigation::Physics is off by default, with no new dependencies in Core. CharacterMotor borrows
+PhysicsWorld3D and live character handles after completed creation. It owns agent/handle/region/token
+bindings only. Repeated handles/agents reject; unsupported/missing physical snapshots never fake
+attachment. Profile dimensions and initial up must match the capsule. Constant nonzero gravity,
+exclusive input and fixed-step ownership are host responsibilities; the sample uses gravityScale1.
+
+drive submits tangent intent, not displacement or a Transform write. sample reads completed feet
+and velocity. A grounded Jolt controller retains a downward support velocity bias even at rest;
+remove only the inward normal component relative to ground velocity. Preserve airborne velocity
+and moving support contributions. Final arrival requires walkable physical support and the actual
+position/speed threshold. Controller deletion invalidates reads. Stop is token-specific; cleanup
+submits zero tangent input without freezing gravity. Physics admission failure is not physical
+completion, and noexcept stop cannot certify emergency braking when the queue/service refuses.
+
+CharacterJumpTraversal proposes a ballistic launch under motor gravity, submits jumpSpeed once,
+observes actual airborne state, and uses remaining-height/vertical-speed feedback plus braking
+speed bounds for tangent control. On actual landing it permits bounded alignment, then the Navigator
+independently checks the sampled exit/speed. Default apex1.6, horizontal speed6, jump speed9,
+duration4seconds, landing error.65. Grounded alignment permits ordinary interruption; airborne
+updates lock it. No clearance/reachability promise or landing pose correction is made. Obstructions,
+failed launch, wrong support/landing or timeout fail. Mandatory cancellation leaves real airborne
+motion to physics and host recovery. No cross-region transfer or variable-gravity route policy exists.
+
+The3D sample uses normal GameProject/Scene, Entity fixed pre-physics behavior, Physics fixed barrier,
+post-physics Transform copies, and native render extraction/UI. It does not step the Host a second
+time. Character creation/reset/load waits for actual completed grounding before attachment. Cleanup
+untracks/detaches first, destroys handles while physics is alive, and keeps emptied borrowed service
+objects through World teardown. Existing `.nvg` data is reused; no format/type is added. Platform
+collision comes from sample-authored unit-box Scene meshes, graph edits do not create geometry, and
+neighbor/blocker sphere approximations are owned by the sample. This is not a generic shape collector.
+
+Finite Jolt tests cover real gap/grounded arrival, wall collision, old-stop safety, blocked jump,
+mandatory airborne cancellation and stale character lifetime. Separate sample tests cover actual
+Scene/multiple controllers/file reload/blocker, standard headless Host, and strict D3D11 geometry/
+HUD/camera selection/three grounded arrivals. The GPU gate captures after rendering/UI flush and
+before endFrame, then checks PNG completion. Placeholder cubes do not establish animation quality,
+and no manual desktop/Release/backend matrix/cross-platform/crowd qualification is inferred.

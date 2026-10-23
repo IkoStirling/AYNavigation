@@ -188,11 +188,19 @@ public:
     /// an executing special traversal finishes using its frozen step, then replans if needed.
     Error publish(std::shared_ptr<const Space>);
     bool available(AgentId) const;
+    /// Order-queue preflight: live sampled agent and valid goal, without requiring the current
+    /// position on the network (it may be in a special traversal). Actual begin validates the start.
+    bool canQueue(AgentId,Location goal) const;
     bool canBegin(AgentId,Location goal) const;
     Error begin(AgentId,TaskId,Location goal);
+    /// Explicit owner-authorized restoration of an earlier task after newer work has finished or
+    /// been cancelled. Host owns suspended identity/goal validity; this is not asynchronous ingress.
+    /// Requires terminal current work, retains the begin high-water mark, and allocates a fresh request.
+    Error resume(AgentId,TaskId,Location goal);
     /// One active update per caller's fixed step. A motor may apply later; sampled arrival decides.
     Update update(AgentId,TaskId);
     /// Idempotent token-specific cancellation. Old task IDs never cancel the current task.
+    /// Already finished work retains its terminal phase/error for diagnostics after cleanup.
     bool cancel(AgentId,TaskId) noexcept;
     bool canInterrupt(AgentId,TaskId) const noexcept;
     std::optional<AgentView> state(AgentId) const;
@@ -203,6 +211,7 @@ private:
         std::shared_ptr<const Space> routeSpace;
         TraversalMemory memory;std::uint64_t elapsed=0;
         bool traversalStarted=false,reserved=false;
+        TaskId highestTask=0;
         double lastDistance=1e100;
     };
     Config _config;std::shared_ptr<const Space> _space;
@@ -216,6 +225,7 @@ private:
     void cleanup(Agent&) noexcept;
     Update fail(Agent&,Error);
     Error plan(Agent&);
+    Error start(AgentId,TaskId,Location,bool restoring);
     bool validateRoute(const Agent&,const Route&) const;
     bool reserve(Agent&,const Step&);
     void release(Agent&) noexcept;

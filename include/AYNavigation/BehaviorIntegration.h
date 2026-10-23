@@ -10,6 +10,8 @@ ayt::behavior::Order navigationOrder(Location goal,ayt::behavior::SourceId sourc
     std::int32_t priority=0,ayt::behavior::KindId kind=kNavigate);
 /// Borrowed Navigator must outlive the behavior runtime/World shutdown. Special traversal results
 /// propagate dynamic interrupt windows into StepResult; resumption replans from actual position.
+/// Order acceptance checks live agent/goal only, allowing queued navigation during traversal;
+/// actual Start/Resume validates the sampled start. Resume restores the owner-held earlier task ID.
 class NavigationExecutor final:public ayt::behavior::Executor {
 public:
     explicit NavigationExecutor(Navigator&,ayt::behavior::KindId kind=kNavigate);

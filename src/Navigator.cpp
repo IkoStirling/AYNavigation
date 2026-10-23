@@ -56,6 +56,13 @@ bool Navigator::available(AgentId id) const {
     if(_busy || !_agents.contains(id)) return false;
     Guard guard(_busy);try {const auto sample=_motor.sample(id);return sample && usable(*sample);} catch(...) {return false;}
 }
+bool Navigator::canQueue(AgentId id,Location goal) const {
+    if(_busy || !goal.region || !finite(goal.position))return false;
+    const auto it=_agents.find(id);if(it==_agents.end())return false;
+    Guard guard(_busy);
+    try {const auto sample=_motor.sample(id);return sample&&usable(*sample)&&_space->contains(goal,it->second.profile);}
+    catch(...){return false;}
+}
 bool Navigator::canBegin(AgentId id,Location goal) const {
     if(_busy || !goal.region || !finite(goal.position)) return false;
     const auto it=_agents.find(id);if(it==_agents.end()) return false;
@@ -108,11 +115,20 @@ Error Navigator::plan(Agent& agent) {
     agent.view.interruptible=true;agent.elapsed=0;agent.lastDistance=1e100;return Error::None;
 }
 Error Navigator::begin(AgentId id,TaskId task,Location goal) {
+    return start(id,task,goal,false);
+}
+Error Navigator::resume(AgentId id,TaskId task,Location goal) {
+    return start(id,task,goal,true);
+}
+Error Navigator::start(AgentId id,TaskId task,Location goal,bool restoring) {
     if(_busy) return Error::Busy;
     if(!task || !goal.region || !finite(goal.position)) return Error::Invalid;
     const auto it=_agents.find(id);if(it==_agents.end()) return Error::Missing;
     auto& agent=it->second;
-    if(task<agent.view.task || (task==agent.view.task && agent.goal!=goal)) return Error::Stale;
+    if((!restoring && (task<agent.highestTask || (task==agent.highestTask && task!=agent.view.task)))
+        || (restoring && (!agent.highestTask || task>agent.highestTask))
+        || (task==agent.view.task && agent.goal!=goal)) return Error::Stale;
+    if(restoring && !terminal(agent.view.phase))return Error::Busy;
     if(task==agent.view.task && !terminal(agent.view.phase)) return Error::None;
     if(!terminal(agent.view.phase) && !agent.view.interruptible) return Error::Busy;
     Guard guard(_busy);
@@ -120,6 +136,7 @@ Error Navigator::begin(AgentId id,TaskId task,Location goal) {
         const auto sample=_motor.sample(id);
         if(!sample || !usable(*sample) || !_space->contains(sample->location,agent.profile) || !_space->contains(goal,agent.profile)) return Error::Invalid;
         cleanup(agent);agent.observed=*sample;agent.goal=goal;agent.view={};agent.view.agent=id;agent.view.task=task;
+        agent.highestTask=std::max(agent.highestTask,task);
         agent.routeSpace.reset();agent.memory={};agent.elapsed=0;
         if(const auto error=plan(agent);error!=Error::None) {fail(agent,error);return error;}
         return Error::None;
@@ -285,7 +302,8 @@ Update Navigator::update(AgentId id,TaskId task) {
 bool Navigator::cancel(AgentId id,TaskId task) noexcept {
     if(_busy) return false;
     const auto it=_agents.find(id);if(it==_agents.end() || it->second.view.task!=task) return false;
-    Guard guard(_busy);cleanup(it->second);it->second.view.phase=Phase::Idle;return true;
+    Guard guard(_busy);const bool finished=terminal(it->second.view.phase);
+    cleanup(it->second);if(!finished)it->second.view.phase=Phase::Idle;return true;
 }
 bool Navigator::canInterrupt(AgentId id,TaskId task) const noexcept {
     const auto it=_agents.find(id);return it==_agents.end() || it->second.view.task!=task || it->second.view.interruptible;

@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <string>
 #include <stdexcept>
+#ifdef AY_NAVIGATION_AUTHORING
+#include <AYNavigation/GraphAsset.h>
+#endif
 
 namespace navexample {
 using namespace ayt::navigation;
@@ -83,6 +86,25 @@ struct World {
         const auto error=navigator->begin(1,task+1,goal);
         if(error==Error::None){++task;message=L"Moving to the selected destination.";}else message=L"Destination is outside the allowed space.";
     }
+#ifdef AY_NAVIGATION_AUTHORING
+    bool load(const std::filesystem::path& path) {
+        if(!navigator->canInterrupt(1,task)){message=L"Finish landing before loading another graph.";return false;}
+        const auto asset=readGraphFile(path);
+        if(!asset || asset.definition.nodes.empty() || std::any_of(asset.definition.nodes.begin(),asset.definition.nodes.end(),[](auto& n){return n.location.region!=1;})) {
+            message=L"Cannot load graph: invalid file/version or unsupported lab region.";return false;
+        }
+        const auto compiled=GraphSpace::compile(asset.definition);
+        Profile profile;profile.capabilities=1;profile.radius=.2;profile.maxSpeed=2;profile.maxAcceleration=12;
+        Config config;config.maxBlockedSteps=90;config.maxReplans=4;
+        // The standalone lab owns no behavior executor; replace its whole navigation session.
+        navigator.reset();motor.body={asset.definition.nodes.front().location,{}};motor.token=0;
+        graph=compiled.value;definition=graph->definition();mode=1;selected=0;
+        navigator=std::make_unique<Navigator>(graph,std::make_shared<GraphPlanner>(),std::make_shared<ConservativeAvoidance>(),motor,obstacles,config);
+        if(navigator->attach(1,profile)!=Error::None || navigator->registerTraversal(1,std::make_shared<TimedArcTraversal>(30,2))!=Error::None)
+            throw std::runtime_error("Cannot install loaded graph");
+        message=L"Loaded graph. Unit reset to first node; running work is not saved.";return true;
+    }
+#endif
     void tick(){const auto state=navigator->state(1);if(state && state->task && state->phase!=Phase::Idle)(void)navigator->update(1,state->task);}
 };
 } // namespace navexample

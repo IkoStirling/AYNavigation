@@ -1,6 +1,6 @@
 # AYNavigation
 
-**Version:** 0.1.0
+**Version:** 0.2.0
 
 **Date:** 2026-10-23
 
@@ -15,6 +15,7 @@
 | Target | Scope |
 |---|---|
 | `AYNavigation::Core` | Immutable spaces, default planners, navigation session, traversal and avoidance contracts |
+| `AYNavigation::Authoring` | Optional explicit versioned .nvg graph files, validation and replacement save |
 | `AYNavigation::Behavior` | Optional AYBehavior v0.2 orders/executor and MotionPort compatibility |
 | `AYNavigation::Entity` | Optional explicit native root kinematic motor over AYBehavior::Entity / AYEntityCore |
 
@@ -37,12 +38,52 @@ The Windows sample is an interactive in-memory path authoring laboratory:
 - Up/Down changes selected node height; brackets change incident corridor widths.
 - Right-click a node to navigate; S stops when the current traversal permits interruption.
 - Mode2 tests a horizontal plane; Mode3 tests free volume motion and selectable target height.
-- O toggles an obstacle; R resets. Edits are session-only, without an asset codec/editor project.
+- O toggles an obstacle; R resets. With Authoring enabled, F5 saves a .nvg graph and F9 loads it.
 
 `--smoke` drives a hidden real HWND through editing, route following, jump cancellation denial,
 planar movement and free 3D arrival. It renders the actual paint code to `AYNavigationDemo.bmp`
 in the working directory. This is a GDI projection/sample motor, not an engine GPU scene or
 manual desktop acceptance. Cross-platform Core has no Windows dependency.
+
+## Saved graphs and multi-unit World workbench
+
+`AY_NAVIGATION_BUILD_AUTHORING=ON` (default) adds the standard-library Authoring target.
+`readGraphFile`/`decodeGraph` return an owned definition plus errors/warnings; inspect success before
+compiling/publishing. `writeGraphFile(path,definition)` validates everything and creates fresh;
+pass `replace=true` only for an explicitly requested replacement. Failed validation leaves the old
+file intact. `.nvg` v1 has a16MiB limit, stable ID ordering and locale-independent numeric round-trip.
+Unknown versions/trailing fields reject. No external resource references or running tasks are stored.
+See [design.md](design.md) for grammar and publication details.
+
+With Entity, Behavior, Authoring and examples enabled, build/run `AYNavigationWorldDemo`:
+
+```powershell
+cmake --build out/build/behavior-world-debug --target AYNavigationWorldDemo
+./out/build/behavior-world-debug/AYRuntime/AYNavigation/AYNavigationWorldDemo.exe
+```
+
+This assembly owns a real process World with three Spatial entities, native fixed-step
+BehaviorSystem, RootKinematicMotor and the actual CameraFrame/projectSelection pipeline.
+The GDI viewport is a diagnostic view; no GPU renderer or `.scn` component is installed.
+
+- Drag a box to select; Shift adds, Ctrl toggles. Capture/focus loss cancels the gesture.
+- Right-click moves, Shift+right-click appends, Ctrl+right-click interrupts at priority100.
+- W appends60ticks of work; S stops each selected unit and reports refusals separately.
+- Nearby authored nodes/projected candidates provide distinct reachable goal slots. This is a
+  bounded greedy example policy, not a general formation or optimal assignment service.
+- The authored merge, narrow path and jump share separate capacity1 resources. Neighbor spheres
+  participate in avoidance. O toggles a blocking obstacle, R resets units/queues on the current graph.
+- E toggles edit/play when idle. Click adds/selects, drag moves, Shift-click connects,
+  Ctrl+Shift-click creates a jump, Up/Down changes height, brackets change widths, Delete removes.
+  Invalid edits and edits stranding attached units reject without publication.
+- F5 saves as, Ctrl+S saves the opened path, F9 opens, F8 validates and shows warning count/first reason.
+  A load rebuilds units/queues; loading/resetting rejects during locked special movement. Invalid
+  files retain existing live state. [narrow-jump.nvg](examples/assets/narrow-jump.nvg) is a supplied graph.
+
+Per-unit rows show planning/moving/link wait/blocked/jumping/arrival/failure, queue/suspended count
+and latest submission result. The hidden native smoke saves/reloads an edited graph, box-selects,
+routes three units, verifies capacity/locked stop and obstacle feedback, and paints the actual
+viewport to `AYNavigationWorldDemo.bmp`. Automated rendering is separate from manual desktop/GPU QA.
 
 ## Core composition
 
@@ -113,6 +154,13 @@ AYBehavior v0.2. An unsafe jump rejects ordinary replacement/stopping; caller ma
 retry. Mandatory unit deletion still cancels and the traversal owns emergency cleanup.
 Resume replans from the actual location. `NavigationMotionPort` also supports existing
 MoveExecutor with an explicit destination region.
+`begin` retains a task high-water mark. Explicit owner-authorized `resume` can restore an earlier
+suspended task only when current navigation is terminal, allocating a fresh planning request.
+The behavior adapter uses this for navigation interrupting navigation. Do not route stale async
+messages through resume. Cancellation of already finished tasks retains terminal diagnostics.
+Queue acceptance uses `canQueue` so a unit can append navigation while in air; actual execution
+checks the then-current start. In the workbench, Append candidates predict prior queue goals,
+without replacing the real start/route checks when the queued task runs.
 
 `RootKinematicMotor` is an opt-in native Spatial-root mover with exclusive pose ownership.
 It uses checked per-step world pose writes without smoothing, physics or character authority.
@@ -123,14 +171,15 @@ topology or fake dynamic-body migration is installed here.
 
 ## Evidence and limits
 
-Tests: `AYNavigationCoreTest` (22 cases), `AYNavigationBehaviorTest` (3),
-`AYNavigationEntityTest` (3 real World cases), and Windows `AYNavigationDemoSmoke`.
+Tests: `AYNavigationCoreTest` (23 cases), `AYNavigationBehaviorTest` (6),
+`AYNavigationEntityTest` (3 real World cases), `AYNavigationAssetTest` (4),
+`AYNavigationWorldLabTest` (4) and both Windows native smoke tests.
 The custom-space/custom-planner/custom-avoidance positive fixture uses a sphere domain and
 dogleg solver, independently of the graph implementation. Negative fixtures reject forged
 routes, stale results, unsafe avoidance, bad snapshots and invalid capacities.
 
 No NavMesh bake, grid/voxel backend, path spline sampler, physics jump/flight autopilot,
-general shape/crowd avoidance, asset/save codec, network protocol, checkpoint or deterministic
+general shape/crowd avoidance, runtime task/save codec, Resource/Cook/Pak registration, network protocol, checkpoint or deterministic
 simulation adapter is implemented. Native doubles and World motor are not lockstep authority.
 Numbers are finite/bounded; see [design.md](design.md), [engine integration](../../AYDocs/NAVIGATION-SYSTEM.md)
 and [SDK contract](../../AYDocs/sdk/contracts/navigation.md) for exact ownership and budgets.

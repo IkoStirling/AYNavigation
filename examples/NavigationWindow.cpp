@@ -4,6 +4,9 @@
 #include <windowsx.h>
 #include <cwchar>
 #include <cmath>
+#ifdef AY_NAVIGATION_AUTHORING
+#include "FileDialog.h"
+#endif
 using namespace ayt::navigation;
 namespace {
 constexpr int top=140,bottom=84;constexpr double scale=38;
@@ -101,7 +104,11 @@ void paint(HWND window,HDC dc,const App& app) {
     text(dc,24,r.bottom-72,(state?phase(state->phase):L"Ready")+L"    |    "+app.world.message);
     text(dc,24,r.bottom-45,L"Mode "+std::to_wstring(app.world.mode)+L"   Selected node "+std::to_wstring(app.world.selected)
         +L"   Target height "+std::to_wstring(app.world.editHeight).substr(0,4)+L"   Speed "+std::to_wstring(length(body.velocity)).substr(0,4),RGB(162,185,208));
+#ifdef AY_NAVIGATION_AUTHORING
+    text(dc,24,r.bottom-22,L"F5: save graph as .nvg   F9: open graph   Green: corridors. Amber: special movement. Blue: unit.",RGB(126,154,179));
+#else
     text(dc,24,r.bottom-22,L"Path edits stay in this session. Green: corridors. Amber: special movement. Blue: unit.",RGB(126,154,179));
+#endif
     SelectObject(dc,oldFont);DeleteObject(font);
 }
 LRESULT CALLBACK procedure(HWND window,UINT message,WPARAM wParam,LPARAM lParam) {
@@ -133,6 +140,14 @@ LRESULT CALLBACK procedure(HWND window,UINT message,WPARAM wParam,LPARAM lParam)
         }
         break;
     case WM_KEYDOWN:
+#ifdef AY_NAVIGATION_AUTHORING
+        if(wParam==VK_F5) {
+            if(app->world.mode!=1){app->world.message=L"Switch to authored graph mode before saving.";break;}
+            if(const auto path=navexample::graphDialog(window,true))app->world.message=writeGraphFile(*path,app->world.definition,true)==AssetError::None?L"Graph saved.":L"Save failed; prior file retained.";
+            break;
+        }
+        if(wParam==VK_F9){if(const auto path=navexample::graphDialog(window,false))app->world.load(*path);break;}
+#endif
         if(wParam>='1' && wParam<='3')app->world.reset(int(wParam-'0'));
         else if(wParam=='R')app->world.reset(app->world.mode);
         else if(wParam=='O')app->world.obstacles.enabled=!app->world.obstacles.enabled;
@@ -178,6 +193,11 @@ bool smoke(HWND window,App& app) {
     if(app.world.definition.links.size()!=links+1)return false;
     const auto nodes=app.world.definition.nodes.size();click(window,WM_LBUTTONDOWN,screen(window,{7,0,4}));
     if(app.world.definition.nodes.size()!=nodes+1)return false;
+#ifdef AY_NAVIGATION_AUTHORING
+    const auto graphPath=std::filesystem::temp_directory_path()/(L"aynav-single-"+std::to_wstring(GetCurrentProcessId())+L"-"+std::to_wstring(GetTickCount64())+L".nvg");
+    struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code error;std::filesystem::remove(path,error);}} cleanup{graphPath};
+    if(writeGraphFile(graphPath,app.world.definition)!=AssetError::None||!app.world.load(graphPath)||app.world.definition.nodes.size()!=nodes+1)return false;
+#endif
     click(window,WM_RBUTTONDOWN,screen(window,{6,1.5,0}));
     bool jumped=false;for(int i=0;i<1000;++i){SendMessageW(window,WM_TIMER,1,0);if(app.world.navigator->state(1)->phase==Phase::Traversing){jumped=true;break;}}
     if(!jumped || app.world.navigator->canInterrupt(1,app.world.task))return false;

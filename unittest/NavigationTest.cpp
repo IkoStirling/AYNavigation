@@ -285,6 +285,18 @@ void custom_follower_can_pass_intermediate_nodes_without_forcing_a_stop() {
     CHECK(continuous && arrived && follower->calls>20);
 }
 }
+void explicit_resume_restores_older_owner_task_without_weakening_begin_staleness() {
+    navtest::Motor motor;navtest::Obstacles obstacles;motor.bodies[1]={{1,{0,0,0}},{}};
+    auto space=VolumeSpace::compile({1,1},{{1,{-20,-20,-20},{20,20,20}}}).value;
+    Navigator n(space,std::make_shared<DirectPlanner>(),std::make_shared<ConservativeAvoidance>(),motor,obstacles,navtest::config());CHECK(n.attach(1)==Error::None);
+    CHECK(n.begin(1,1,{1,{8,0,0}})==Error::None);const auto original=n.state(1)->request;CHECK(n.cancel(1,1));
+    CHECK(n.begin(1,3,{1,{1,0,0}})==Error::None);CHECK(n.resume(1,1,{1,{8,0,0}})==Error::Busy);
+    CHECK(navtest::finish(n,1,3).status==TravelStatus::Succeeded);
+    CHECK(n.begin(1,1,{1,{8,0,0}})==Error::Stale);CHECK(n.resume(1,4,{1,{8,0,0}})==Error::Stale);
+    CHECK(n.resume(1,1,{1,{8,0,0}})==Error::None);CHECK(n.state(1)->request>original);
+    CHECK(n.begin(1,2,{1,{2,0,0}})==Error::Stale);CHECK(n.begin(1,3,{1,{1,0,0}})==Error::Stale);CHECK(!n.cancel(1,3));
+    CHECK(navtest::finish(n,1,1).status==TravelStatus::Succeeded);CHECK(n.begin(1,4,{1,{4,0,0}})==Error::None);
+}
 TEST_MAIN(
     RUN(graph_validation_and_directed_interior_routes);
     RUN(graph_clearance_capabilities_special_links_and_budget);
@@ -308,4 +320,5 @@ TEST_MAIN(
     RUN(failed_traversal_releases_capacity_for_another_agent);
     RUN(region_aware_custom_traversal_uses_backend_confirmed_destination);
     RUN(custom_follower_can_pass_intermediate_nodes_without_forcing_a_stop);
+    RUN(explicit_resume_restores_older_owner_task_without_weakening_begin_staleness);
 )

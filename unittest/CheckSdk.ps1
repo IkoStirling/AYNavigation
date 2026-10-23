@@ -1,6 +1,7 @@
 param([Parameter(Mandatory=$true)][string]$Root)
 $ErrorActionPreference='Stop'
 $navigationCases=@(
+    @{query='保存导航路径';first='tooling.navigation.graph-authoring'},
     @{query='手绘路径';first='common.navigation.space'},
     @{query='自定义寻路';first='common.navigation.runtime'},
     @{query='避障';first='common.navigation.runtime'},

@@ -25,13 +25,14 @@ NavigationExecutor::NavigationExecutor(Navigator& navigator,ayt::behavior::KindI
     if(kind<3) throw std::invalid_argument("Navigation kind must not replace Wait/Move");
 }
 bool NavigationExecutor::accepts(ayt::behavior::UnitId unit,const ayt::behavior::Order& order) const {
-    const auto target=goal(order);return order.kind==_kind && target && _navigator.canBegin(unit,*target);
+    const auto target=goal(order);return order.kind==_kind && target && _navigator.canQueue(unit,*target);
 }
 ayt::behavior::StepResult NavigationExecutor::step(ayt::behavior::TaskContext& context,ayt::behavior::StepPhase phase) {
     if(phase!=ayt::behavior::StepPhase::Tick) {
         const auto target=goal(context.order);
         if(!target) return {ayt::behavior::StepStatus::Failed,std::uint32_t(Error::Invalid)};
-        const auto error=_navigator.begin(context.unit,context.task,*target);
+        const auto error=phase==ayt::behavior::StepPhase::Resume?_navigator.resume(context.unit,context.task,*target)
+            :_navigator.begin(context.unit,context.task,*target);
         if(error!=Error::None) return {ayt::behavior::StepStatus::Failed,std::uint32_t(error)};
     }
     return translated(_navigator.update(context.unit,context.task));
@@ -44,7 +45,11 @@ NavigationMotionPort::NavigationMotionPort(Navigator& navigator,RegionId region)
 }
 bool NavigationMotionPort::available(ayt::behavior::UnitId unit) const {return _navigator.available(unit);}
 bool NavigationMotionPort::begin(ayt::behavior::UnitId unit,ayt::behavior::TaskId task,ayt::behavior::Point3 point) {
-    return _navigator.begin(unit,task,{_region,{point.x,point.y,point.z}})==Error::None;
+    const Location target{_region,{point.x,point.y,point.z}};
+    const auto error=_navigator.begin(unit,task,target);
+    // MotionPort::begin is the behavior-owned Start/Resume entry. A restored older task is
+    // authorized by that owner, and resume still refuses to displace any running navigation.
+    return error==Error::None || (error==Error::Stale && _navigator.resume(unit,task,target)==Error::None);
 }
 ayt::behavior::StepResult NavigationMotionPort::poll(ayt::behavior::UnitId unit,ayt::behavior::TaskId task) {
     return translated(_navigator.update(unit,task));

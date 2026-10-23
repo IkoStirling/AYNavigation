@@ -1,8 +1,8 @@
 # AYNavigation design
 
-**Version:** 0.3.0
+**Version:** 0.4.0
 
-**Date:** 2026-10-23
+**Date:** 2026-10-24
 
 **Status:** Active
 
@@ -198,7 +198,7 @@ actual fixed-step scheduling, lifetime and region handling. Windows smoke drives
 navigation messages and actual GDI paint. No production GPU, physics jump/flight, cross-platform,
 large-crowd/performance, Release or deterministic qualification is inferred.
 
-Future backends: NavMesh/grid/voxel, curve sampling, further physical/animation traversal, authoritative
+Future backends: general NavMesh/voxel, curve sampling, further physical/animation traversal, authoritative
 connected-space transfer adapters, editor asset/cook pipeline, richer shapes/crowd strategies,
 orientation-aware planning and registered deterministic state.
 
@@ -241,3 +241,43 @@ Scene/multiple controllers/file reload/blocker, standard headless Host, and stri
 HUD/camera selection/three grounded arrivals. The GPU gate captures after rendering/UI flush and
 before endFrame, then checks PNG completion. Placeholder cubes do not establish animation quality,
 and no manual desktop/Release/backend matrix/cross-platform/crowd qualification is inferred.
+
+## 10. Static topology bake and perception (v0.4)
+
+StaticBakeWorld owns versioned authoring input by persistent region ID. Each BakeRegion
+describes one horizontal floor rectangle and static axis-aligned blocker boxes. The Host
+extracts these from current Scene content; dynamic actors remain in ObstacleSource. The
+config bounds cell/link count and fixes cell size, corridor width and agent height. Every
+cell center must have a clear rectangular corridor footprint, and every adjacent link must
+have a clear swept rectangle through full agent height. The result is a deterministic
+directed GraphDefinition compiled by existing GraphSpace. Node/link IDs are generated in
+sorted region/grid order within each snapshot; do not save them as persistent object IDs.
+
+Region publication checks increasing contentVersion. A same-version identical region is
+idempotent; changed content with the same/older version is stale. Rebuild happens in a
+temporary graph, then atomically replaces the current immutable snapshot with an increasing
+Stamp version. Failed validation, blocked portal attachment and budget failure leave the
+old graph and region input unchanged. `Navigator::publish` invalidates ordinary routes and
+replans from sampled actual motion. A started special traversal keeps its frozen step and
+must be resolved by its authoritative movement adapter. Unloading a region removes its
+nodes; connections referring to it become dormant and reactivate on reload. If the final
+region unloads, `current()` becomes null and the Host must detach/cancel its agents.
+
+Connections are explicit directed special links whose endpoints snap to a free cell within
+one cell size. Their traversal kind/resource/capacity are authored from the same connected
+space topology as movement; the bake does not move an Entity or physical body. A real
+Traversal must use the existing connected-space authority. The simple bake intentionally
+excludes slopes, stacked floors, arbitrary meshes, exact dynamic obstacle shapes and
+incremental tile updates; a region edit rebuilds the bounded graph.
+
+PerceptionMemory is one-NPC, single-thread state. Sight targets carry stable persistent IDs,
+feet/navigation locations and optional aim points. A valid in-range/cone target is visible
+only when the Host's current-world occlusion query returns clear. Query failure aborts the
+whole update without changing tick, memory or sound receipts. Unique sound event IDs prevent
+short-window redelivery from refreshing memory. Heard locations and last-seen feet become
+bounded, expiring records; visual observations win over sound in the current tick. The
+returned Chase/Search/Return goal is a suggestion for an AYBehavior/NavigationExecutor
+command, not authority over game permissions or interruption. `forgetRegion` removes
+unloaded-region records before transient Entity teardown. No Entity or Physics handles are
+retained across frames. The standalone sample uses a simulated motor and visibility query;
+real raycast/audio/Scene wiring remains Host work.

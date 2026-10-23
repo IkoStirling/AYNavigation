@@ -1,8 +1,8 @@
 # AYNavigation
 
-**Version:** 0.3.0
+**Version:** 0.4.0
 
-**Date:** 2026-10-23
+**Date:** 2026-10-24
 
 **Status:** Active — experimental public API
 
@@ -19,6 +19,33 @@
 | `AYNavigation::Behavior` | Optional AYBehavior v0.2 orders/executor and MotionPort compatibility |
 | `AYNavigation::Entity` | Optional explicit native root kinematic motor over AYBehavior::Entity / AYEntityCore |
 | `AYNavigation::Physics` | Optional borrowed Jolt capsule motor and real grounded jump traversal; defaults OFF |
+
+## Static walkable bake and NPC perception
+
+`StaticBakeWorld` converts bounded, horizontal walkable floor rectangles and static blocker
+boxes into an immutable `GraphSpace` revision. The caller extracts these shapes from Scene
+content, supplies persistent region IDs and increasing content versions, and publishes the
+new graph to `Navigator::publish` at a quiescent frame boundary. A failed bake retains the
+previous graph. Unloading one region removes its nodes and disables its cross-region links;
+reloading the region restores links declared with `setConnections`. Each directed connection
+names a `TraversalKind` that the caller must register with Navigator and implement with the
+real connected-space movement authority.
+
+`PerceptionMemory` receives stable target IDs, target feet/aim points, current-step sound
+stimuli, and a Host-owned visibility query. It returns a generic Chase, Search or Return
+goal; a game or AYBehavior owner chooses command priority and interruption. Sight requires
+range, cone and successful occlusion query. Sound has a bounded audible radius and event
+identity. Old memories expire by fixed tick; `forgetRegion` removes unloaded-region targets.
+Failed visibility queries leave memory unchanged. No Entity or Physics handles are retained.
+
+Run `AYNavigationSpatialAwarenessExample` for a small baked 3D room where one simulated NPC
+follows chase, search, heard-location and home goals through the existing Navigator.
+`AYNavigationSpatialAwarenessTest` covers obstacle detours, region load/unload/revision,
+route invalidation, visual and audio memory, query failure and expiration.
+
+This is a 2.5D rectangular static-geometry bake, not general NavMesh generation. Scene
+geometry extraction, physics ray occlusion, sound emission and special region traversal are
+Host adapters. The module does not infer static meshes or bake sloped/multilevel surfaces.
 
 ## Build and try
 
@@ -203,7 +230,7 @@ The custom-space/custom-planner/custom-avoidance positive fixture uses a sphere 
 dogleg solver, independently of the graph implementation. Negative fixtures reject forged
 routes, stale results, unsafe avoidance, bad snapshots and invalid capacities.
 
-No NavMesh bake, grid/voxel backend, path spline sampler, flight autopilot or animation traversal,
+No arbitrary NavMesh/voxel backend, path spline sampler, flight autopilot or animation traversal,
 general shape/crowd avoidance, runtime task/save codec, Resource/Cook/Pak registration, network protocol, checkpoint or deterministic
 simulation adapter is implemented. Native doubles and World motor are not lockstep authority.
 Numbers are finite/bounded; see [design.md](design.md), [engine integration](../../AYDocs/NAVIGATION-SYSTEM.md)

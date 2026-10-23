@@ -1,0 +1,13 @@
+/build/
+/out/
+CMakeFiles/
+CMakeCache.txt
+CTestTestfile.cmake
+cmake_install.cmake
+Testing/
+*.obj
+*.lib
+*.exe
+*.pdb
+*.ilk
+/AYNavigationDemo.bmp

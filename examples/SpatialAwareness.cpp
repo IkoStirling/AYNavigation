@@ -26,7 +26,7 @@ struct EmptyObstacles final : ObstacleSource {
     { return {true, {}}; }
 };
 struct ClearView final : VisibilityQuery {
-    Result<bool> clear(Location, Location) override { return {Error::None, true}; }
+    Result<bool> clear(Location, const SightTarget&) override { return {Error::None, true}; }
 };
 
 bool follow(Navigator& navigator, TaskId task, const PursuitDecision& decision)

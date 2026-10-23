@@ -19,6 +19,7 @@
 | `AYNavigation::Behavior` | Optional AYBehavior v0.2 orders/executor and MotionPort compatibility |
 | `AYNavigation::Entity` | Optional explicit native root kinematic motor over AYBehavior::Entity / AYEntityCore |
 | `AYNavigation::Physics` | Optional borrowed Jolt capsule motor and real grounded jump traversal; defaults OFF |
+| `AYNavigation::WorldAdapter` | Optional current Scene World static Box extraction and Host physics ray visibility; defaults OFF |
 
 ## Static walkable bake and NPC perception
 
@@ -46,6 +47,33 @@ route invalidation, visual and audio memory, query failure and expiration.
 This is a 2.5D rectangular static-geometry bake, not general NavMesh generation. Scene
 geometry extraction, physics ray occlusion, sound emission and special region traversal are
 Host adapters. The module does not infer static meshes or bake sloped/multilevel surfaces.
+
+Enable `AY_NAVIGATION_BUILD_WORLD_ADAPTER=ON` when `AYEntityCore` is present. At a
+quiescent frame boundary **after** a Scene or `WorldRegionStream` has attached its
+physics components, pass `scene.world()` to `WorldBakeAdapter` and publish a region
+with an authored persistent ID for its single static Box floor. Every other static,
+non-trigger 3D Box collider in that region is extracted as a conservative blocker
+from its composed World matrix. An unsupported static solid shape fails extraction;
+the prior graph stays live. The caller must increment the content version whenever
+static geometry changes, call `Navigator::publish` after successful bake, and call
+`unloadRegion` after `WorldRegionStream::unload` before issuing new routes. Existing
+active agents in the unloaded region must be detached or moved by their World owner.
+
+`PhysicsRayVisibility` borrows a ready Host `IPhysicsQuery`, current World and
+`SpacePhysicsRoutes`. It queries only targets in the observer's current region,
+filters the ray to that region's layer, recognizes a hit on the target's current
+body, and fails explicitly if the closest hit is the observer's own body. The
+eye must be outside self collision or use an appropriate collision layer;
+`raycastSync` has no ignored-body parameter. A failed ray is not treated as sight.
+The adapter uses the current Scene World through `scene.world()` and never retains
+Entity or Physics handles. `AYNavigationWorldAdapterTest` exercises real World
+entities, static changes, region removal, and a fake `IPhysicsQuery`; a live Jolt
+backend and Scene resource attachment remain Host integration and are not certified
+by that test.
+`AYNavigationWorldAdapterExample` runs the same World-backed room, updates its
+route graph after removing a wall, and feeds `PerceptionMemory` through the
+physics-query adapter. Its substitute query makes the executable runnable without
+a PhysicsManager; an assembled Host passes its real `physicsQuery()` instead.
 
 ## Build and try
 

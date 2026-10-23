@@ -280,4 +280,28 @@ returned Chase/Search/Return goal is a suggestion for an AYBehavior/NavigationEx
 command, not authority over game permissions or interruption. `forgetRegion` removes
 unloaded-region records before transient Entity teardown. No Entity or Physics handles are
 retained across frames. The standalone sample uses a simulated motor and visibility query;
-real raycast/audio/Scene wiring remains Host work.
+live Jolt/audio/Scene lifecycle wiring remains Host work.
+
+## 11. Optional Scene World and Physics query adapter
+
+`AYNavigation::WorldAdapter` is an opt-in assembly over public Entity World and
+Physics query interfaces. It accepts `scene.world()` after Scene or RegionStream
+attachment on the owner thread. A floor is identified by its persistent Entity ID
+and must have exactly one static, non-trigger 3D Box shape with a horizontal top.
+All other static non-trigger 3D Box colliders in the same effective region become
+blocker AABBs, transformed through their composed World matrix. Rotated blocker
+boxes use conservative world AABBs; non-Box static solids reject the whole bake
+because silently omitting them would publish unsafe routes. Dynamic bodies stay
+in `ObstacleSource`. Region/version publication and rollback remain owned by
+`StaticBakeWorld`; unload the corresponding graph region after WorldRegionStream
+has removed its resident content, then detach or move affected agents.
+
+`PhysicsRayVisibility` borrows the Host's ready `IPhysicsQuery`, current World,
+and `SpacePhysicsRoutes`. It resolves target identity afresh each query, casts only
+within one region's physics layer, accepts a current target-body hit, and fails
+closed on query error, missing identity/route, or observer self-hit. Public
+`raycastSync` cannot ignore the observer's body; the Host positions the eye outside
+its collider or configures an appropriate sensor layer. Cross-region portal sight,
+sensor scheduling, sound emission, live Jolt integration tests, and arbitrary mesh
+geometry extraction remain separate Host/adapter work. The focused adapter test
+uses real World entities and a fake `IPhysicsQuery` to validate the query contract.

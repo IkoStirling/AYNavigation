@@ -29,7 +29,7 @@ struct SoundStimulus {
 class VisibilityQuery {
 public:
     virtual ~VisibilityQuery() = default;
-    virtual Result<bool> clear(Location eye, Location target) = 0;
+    virtual Result<bool> clear(Location eye, const SightTarget& target) = 0;
 };
 
 struct PerceptionConfig {

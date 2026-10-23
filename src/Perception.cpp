@@ -79,7 +79,7 @@ Result<PursuitDecision> PerceptionMemory::update(
         if (distance > _config.visualRange) continue;
         if (distance > 0.0 && dot(facing, delta * (1.0 / distance)) < minCosine)
             continue;
-        const auto line = visibility.clear(eye, sightPoint);
+        const auto line = visibility.clear(eye, target);
         if (!line) return {Error::QueryFailed};
         if (!line.value) continue;
         stagedMemory[target.persistentId] = {target.location, tick};

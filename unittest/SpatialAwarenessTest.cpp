@@ -141,7 +141,7 @@ void bakeAndUpdate()
 struct Visibility final : VisibilityQuery {
     bool open = true;
     bool fail = false;
-    Result<bool> clear(Location, Location) override
+    Result<bool> clear(Location, const SightTarget&) override
     {
         return fail ? Result<bool>{Error::QueryFailed}
                     : Result<bool>{Error::None, open};

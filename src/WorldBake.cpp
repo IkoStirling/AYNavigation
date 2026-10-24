@@ -181,6 +181,15 @@ Result<std::shared_ptr<const GraphSpace>> WorldBakeAdapter::publishRegion(
     return _bake.publishRegion(std::move(extracted.value));
 }
 
+Result<std::shared_ptr<const GraphSpace>> WorldBakeAdapter::refreshRegion(
+    RegionId region, std::span<const std::string_view> floorPersistentIds)
+{
+    auto extracted = extractWorldBakeRegion(_world, region, 1,
+                                            floorPersistentIds);
+    if (!extracted) return {extracted.error};
+    return _bake.refreshRegion(std::move(extracted.value));
+}
+
 Result<std::shared_ptr<const GraphSpace>> WorldBakeAdapter::publishRegion(
     RegionId region, std::uint64_t contentVersion,
     std::span<const std::string_view> floorPersistentIds)

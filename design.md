@@ -269,6 +269,11 @@ replans from sampled actual motion. A started special traversal keeps its frozen
 must be resolved by its authoritative movement adapter. Unloading a region removes its
 nodes; connections referring to it become dormant and reactivate on reload. If the final
 region unloads, `current()` becomes null and the Host must detach/cancel its agents.
+The optional `refreshRegion` compares observed floor, blocker and ramp geometry
+with the last accepted region, ignoring the caller's contentVersion. Equal
+geometry returns the current graph without a new stamp. Changed geometry uses
+the prior region version plus one (or one for a new region) and enters the same
+atomic publish path. A failed refresh leaves the stored version unchanged.
 
 Connections are explicit directed special links whose endpoints snap to a free cell within
 one cell size. Their traversal kind/resource/capacity are authored from the same connected
@@ -318,6 +323,9 @@ because silently omitting them would publish unsafe routes. Dynamic bodies stay
 in `ObstacleSource`. Region/version publication and rollback remain owned by
 `StaticBakeWorld`; unload the corresponding graph region after WorldRegionStream
 has removed its resident content, then detach or move affected agents.
+`WorldBakeAdapter::refreshRegion` extracts current static geometry and lets
+`StaticBakeWorld` assign the next version only when it differs. The Host still
+calls it after collider edits; World changes are not watched automatically.
 
 `PhysicsRayVisibility` borrows the Host's ready `IPhysicsQuery`, current World,
 and `SpacePhysicsRoutes`. It resolves target identity afresh each query, casts only

@@ -133,6 +133,25 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::publishRegion(
     return rebuild(std::move(staged), _connections);
 }
 
+Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::refreshRegion(
+    BakeRegion region)
+{
+    if (const auto old = _regions.find(region.id); old != _regions.end()) {
+        const auto& previous = old->second;
+        if (region.floor == previous.floor
+            && region.blockers == previous.blockers
+            && region.additionalFloors == previous.additionalFloors
+            && region.ramps == previous.ramps)
+            return {Error::None, _graph};
+        if (previous.contentVersion == std::numeric_limits<std::uint64_t>::max())
+            return {Error::Budget};
+        region.contentVersion = previous.contentVersion + 1;
+    } else {
+        region.contentVersion = 1;
+    }
+    return publishRegion(std::move(region));
+}
+
 Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::unloadRegion(RegionId id)
 {
     if (!_regions.contains(id)) return {Error::Missing};

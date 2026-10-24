@@ -35,6 +35,11 @@ An updated region recalculates only its own walkable cells and local links;
 unchanged region fragments are shared across revisions. The complete graph is
 still recompiled for atomic publication. `BakeReport::geometryRebakes` reports
 how many region geometries were recalculated in the last publication.
+For current Scene geometry, `WorldBakeAdapter::refreshRegion` extracts the
+region and advances its content version only when floor, ramp or blocker geometry
+changes. Repeating an unchanged refresh returns the existing graph; failed
+extraction or bake leaves that graph live. Call it at the quiescent boundary
+after static collider edits, then publish a changed graph to Navigator.
 One region may contain one primary horizontal floor and up to 16 additional flat
 floors or planar ramps. Each surface has an independent grid; an authored directed
 same-region `BakeConnection` with a registered traversal kind joins selected levels.
@@ -70,8 +75,9 @@ physics components, pass `scene.world()` to `WorldBakeAdapter` and publish a reg
 with authored persistent IDs for static Box floors and ramps. Every other static,
 non-trigger 3D Box collider in that region is extracted as a conservative blocker
 from its composed World matrix. An unsupported static solid shape fails extraction;
-the prior graph stays live. The caller must increment the content version whenever
-static geometry changes, call `Navigator::publish` after successful bake, and call
+the prior graph stays live. The explicit `publishRegion` path requires a new
+content version for static edits; `refreshRegion` detects geometry changes instead.
+Call `Navigator::publish` after a changed bake, and call
 `unloadRegion` after `WorldRegionStream::unload` before issuing new routes. Existing
 active agents in the unloaded region must be detached or moved by their World owner.
 

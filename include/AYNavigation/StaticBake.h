@@ -82,6 +82,10 @@ class StaticBakeWorld {
 public:
     StaticBakeWorld(std::uint64_t spaceId, BakeConfig config = {});
     Result<std::shared_ptr<const GraphSpace>> publishRegion(BakeRegion region);
+    /// Refresh observed geometry without a game-managed content version.
+    /// An identical region is a no-op; changed geometry advances this region's
+    /// version and publishes atomically. The supplied contentVersion is ignored.
+    Result<std::shared_ptr<const GraphSpace>> refreshRegion(BakeRegion region);
     Result<std::shared_ptr<const GraphSpace>> unloadRegion(RegionId id);
     Result<std::shared_ptr<const GraphSpace>> setConnections(
         std::vector<BakeConnection> connections);

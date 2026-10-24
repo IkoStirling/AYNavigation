@@ -39,6 +39,11 @@ public:
     Result<std::shared_ptr<const GraphSpace>> publishRegion(
         RegionId region, std::uint64_t contentVersion,
         std::span<const std::string_view> floorPersistentIds);
+    /// Extract current static geometry and refresh its bake without requiring
+    /// the game to advance a contentVersion. Failed extraction/bake leaves the
+    /// previous graph live. Call after static Scene collider changes.
+    Result<std::shared_ptr<const GraphSpace>> refreshRegion(
+        RegionId region, std::span<const std::string_view> floorPersistentIds);
     Result<std::shared_ptr<const GraphSpace>> unloadRegion(RegionId region)
     { return _bake.unloadRegion(region); }
 private:

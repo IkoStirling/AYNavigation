@@ -122,6 +122,34 @@ void world_geometry_and_unload()
     CHECK(adapter.publishRegion(1, 3, floorId).error == Error::Invalid);
 }
 
+void observed_static_geometry_refreshes_without_manual_version()
+{
+    Fixture fixture;
+    fixture.box(floorId, {3, -0.5f, 3}, {3, 0.5f, 3});
+    auto* blocker = fixture.box(obstacleId, {3, 1, 3}, {1, 1, 1});
+    StaticBakeWorld bake(83);
+    WorldBakeAdapter adapter(fixture.world, bake);
+    const std::array<std::string_view, 1> floors{floorId};
+    const auto first = adapter.refreshRegion(1, floors);
+    CHECK(first && first.value && bake.report().geometryRebakes == 1);
+    CHECK(bake.report().blockedCells > 0);
+    const auto initialRevision = bake.report().stamp.version;
+    const auto same = adapter.refreshRegion(1, floors);
+    CHECK(same && same.value == first.value);
+    CHECK(bake.report().stamp.version == initialRevision);
+    blocker->transform()->setPosition(20, 1, 20);
+    const auto changed = adapter.refreshRegion(1, floors);
+    CHECK(changed && changed.value != first.value);
+    CHECK(bake.report().stamp.version == initialRevision + 1);
+    CHECK(bake.report().geometryRebakes == 1);
+    CHECK(bake.report().blockedCells == 0);
+    blocker->getComponent<ayt::entity::ColliderComponent>()
+        ->shapes.front().shape = ayt::entity::ColliderShapeType::Sphere;
+    CHECK(adapter.refreshRegion(1, floors).error == Error::Unsupported);
+    CHECK(bake.current() == changed.value);
+    CHECK(bake.report().stamp.version == initialRevision + 1);
+}
+
 struct FakeQuery final : ayt::physics::IPhysicsQuery {
     bool ready = true;
     ayt::physics::PhysResult status = ayt::physics::PhysResult::Ok;
@@ -179,5 +207,6 @@ TEST_MAIN(
     RUN(stacked_world_floor_extraction_preserves_published_graph);
     RUN(tilted_box_extracts_a_bounded_ramp);
     RUN(world_geometry_and_unload);
+    RUN(observed_static_geometry_refreshes_without_manual_version);
     RUN(physics_ray_uses_world_identity_and_region_mask);
 )

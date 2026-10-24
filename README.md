@@ -70,14 +70,14 @@ active agents in the unloaded region must be detached or moved by their World ow
 `PhysicsRayVisibility` borrows a ready Host `IPhysicsQuery`, current World and
 `SpacePhysicsRoutes`. It queries only targets in the observer's current region,
 filters the ray to that region's layer, recognizes a hit on the target's current
-body, and fails explicitly if the closest hit is the observer's own body. The
-eye must be outside self collision or use an appropriate collision layer;
-`raycastSync` has no ignored-body parameter. A failed ray is not treated as sight.
+body. When the observer has a current body, `raycastSyncIgnoringBody` excludes
+exactly that body so the next blocker or target can be seen. Query backends that
+cannot exclude it return an explicit failure. A failed ray is not treated as sight.
 The adapter uses the current Scene World through `scene.world()` and never retains
 Entity or Physics handles. `AYNavigationWorldAdapterTest` exercises real World
 entities, static changes, region removal, and a fake `IPhysicsQuery`; a live Jolt
 backend and Scene resource attachment remain Host integration and are not certified
-by that test.
+by that test; the Jolt ignored-body behavior has its own AYPhysics test.
 `AYNavigationWorldAdapterExample` runs the same World-backed room, updates its
 route graph after removing a wall, and feeds `PerceptionMemory` through the
 physics-query adapter. Its substitute query makes the executable runnable without

@@ -45,7 +45,7 @@ Result<bool> PhysicsRayVisibility::clear(Location eye,
         {float(delta.x / distance), float(delta.y / distance),
          float(delta.z / distance)}};
     physics::RaycastHit hit;
-    if (_query.raycastSync(ray, hit, route->collideMask)
+    if (_query.raycastSyncIgnoringBody(ray, hit, route->collideMask, observerBody)
         != physics::PhysResult::Ok)
         return {Error::QueryFailed};
     if (hit.hit && (!std::isfinite(hit.distance) || hit.distance < 0))

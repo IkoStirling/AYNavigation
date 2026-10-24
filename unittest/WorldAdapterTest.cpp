@@ -107,11 +107,16 @@ struct FakeQuery final : ayt::physics::IPhysicsQuery {
     ayt::physics::PhysResult status = ayt::physics::PhysResult::Ok;
     ayt::physics::RaycastHit next{};
     ayt::physics::PhysLayerMask lastMask = 0;
+    ayt::physics::BodyHandle lastIgnored = ayt::physics::InvalidBodyHandle;
     bool isReady() const override { return ready; }
     ayt::physics::PhysResult raycastSync(const ayt::math::Ray&,
         ayt::physics::RaycastHit& hit,
         ayt::physics::PhysLayerMask mask) override
     { lastMask = mask; hit = next; return status; }
+    ayt::physics::PhysResult raycastSyncIgnoringBody(const ayt::math::Ray& ray,
+        ayt::physics::RaycastHit& hit, ayt::physics::PhysLayerMask mask,
+        ayt::physics::BodyHandle ignored) override
+    { lastIgnored = ignored; return raycastSync(ray, hit, mask); }
     ayt::physics::PhysResult overlapSphereSync(
         const ayt::math::FVector3&, float,
         std::vector<ayt::physics::BodyHandle>&,
@@ -134,6 +139,7 @@ void physics_ray_uses_world_identity_and_region_mask()
     const Location eye{1, {0, 1.5, 1}};
     CHECK(visibility.clear(eye, sight).value);
     CHECK(query.lastMask == (1u << 16));
+    CHECK(query.lastIgnored == 41);
     query.next = {.hit = true, .body = 99, .distance = 2.0f};
     CHECK(!visibility.clear(eye, sight).value);
     query.next.body = 42;

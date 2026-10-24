@@ -307,9 +307,10 @@ has removed its resident content, then detach or move affected agents.
 `PhysicsRayVisibility` borrows the Host's ready `IPhysicsQuery`, current World,
 and `SpacePhysicsRoutes`. It resolves target identity afresh each query, casts only
 within one region's physics layer, accepts a current target-body hit, and fails
-closed on query error, missing identity/route, or observer self-hit. Public
-`raycastSync` cannot ignore the observer's body; the Host positions the eye outside
-its collider or configures an appropriate sensor layer. Cross-region portal sight,
+closed on query error, missing identity/route, or an incorrectly returned
+observer self-hit. `raycastSyncIgnoringBody` excludes one exact generation-checked
+observer body in Jolt; unsupported query backends fail closed. Cross-region portal sight,
 sensor scheduling, sound emission, live Jolt integration tests, and arbitrary mesh
 geometry extraction remain separate Host/adapter work. The focused adapter test
-uses real World entities and a fake `IPhysicsQuery` to validate the query contract.
+uses real World entities and a fake `IPhysicsQuery` to validate the query contract;
+AYPhysics tests cover the actual nearest-hit skip in Jolt.

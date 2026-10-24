@@ -11,9 +11,9 @@ namespace ayt::entity { class World; }
 namespace ayt::navigation {
 
 /// Optional current-World 3D ray adapter. The borrowed query/World/routes must
-/// outlive it. Only same-region sight is supported. A ray that hits the
-/// observer's own body fails explicitly because raycastSync cannot ignore it;
-/// place the eye outside self collision or choose a suitable physics layer.
+/// outlive it. Only same-region sight is supported. The observer body is
+/// excluded by the 3D query when one is registered; unsupported query backends
+/// fail explicitly instead of treating self collision as clear visibility.
 class PhysicsRayVisibility final : public VisibilityQuery {
 public:
     PhysicsRayVisibility(physics::IPhysicsQuery& query,

@@ -57,15 +57,17 @@ public:
         std::span<const SoundStimulus> sounds,
         Location home, VisibilityQuery& visibility);
     /// Call from a region-unload boundary before its transient entities die.
+    /// Clears both remembered targets and sound deduplication for that region.
     void forgetRegion(RegionId region) noexcept;
     [[nodiscard]] std::size_t rememberedCount() const noexcept { return _memory.size(); }
 
 private:
     struct Remembered { Location lastKnown; std::uint64_t lastTick = 0; };
+    struct SeenSound { RegionId region = 0; std::uint64_t lastTick = 0; };
     PerceptionConfig _config;
     std::uint64_t _lastTick = 0;
     std::map<std::string, Remembered> _memory;
-    std::map<std::uint64_t, std::uint64_t> _seenSounds;
+    std::map<std::uint64_t, SeenSound> _seenSounds;
 };
 
 } // namespace ayt::navigation

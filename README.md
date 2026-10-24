@@ -37,6 +37,8 @@ stimuli, and a Host-owned visibility query. It returns a generic Chase, Search o
 goal; a game or AYBehavior owner chooses command priority and interruption. Sight requires
 range, cone and successful occlusion query. Sound has a bounded audible radius and event
 identity. Old memories expire by fixed tick; `forgetRegion` removes unloaded-region targets.
+It also clears sound-event deduplication owned by that region, so a reloaded
+region can deliver its current sound facts without waiting for old IDs to age out.
 Failed visibility queries leave memory unchanged. No Entity or Physics handles are retained.
 
 Run `AYNavigationSpatialAwarenessExample` for a small baked 3D room where one simulated NPC

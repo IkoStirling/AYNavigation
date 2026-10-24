@@ -188,7 +188,14 @@ void visualAudioMemory()
           "new sound remembered");
     memory.forgetRegion(1);
     check(memory.rememberedCount() == 0, "region unload drops transient memory");
-    auto afterUnload = memory.update(9, eye, {1, 0, 0}, {}, {}, home, visibility);
+    auto replayed = memory.update(9, eye, {1, 0, 0}, {},
+        std::array{SoundStimulus{101, "target-1",
+                                 {1, {2.5, 1.7, 0.5}}, 8.0}}, home, visibility);
+    check(bool(replayed) && replayed.value.mode == PursuitMode::Search
+          && replayed.value.goal.position.x == 2.5,
+          "reloaded region may reuse a previously seen sound event ID");
+    memory.forgetRegion(1);
+    auto afterUnload = memory.update(10, eye, {1, 0, 0}, {}, {}, home, visibility);
     check(bool(afterUnload) && afterUnload.value.mode == PursuitMode::Return,
           "unloaded target cannot be pursued");
 }

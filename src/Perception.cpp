@@ -51,14 +51,15 @@ Result<PursuitDecision> PerceptionMemory::update(
         else ++it;
     }
     for (auto it = stagedSounds.begin(); it != stagedSounds.end();) {
-        if (tick - it->second > _config.memoryTicks)
+        if (tick - it->second.lastTick > _config.memoryTicks)
             it = stagedSounds.erase(it);
         else ++it;
     }
 
     for (const auto& sound : sounds) {
         if (stagedSounds.contains(sound.eventId)) continue;
-        stagedSounds.emplace(sound.eventId, tick);
+        stagedSounds.emplace(sound.eventId,
+                             SeenSound{sound.location.region, tick});
         if (sound.location.region != eye.region
             || length(sound.location.position - eye.position)
                    > sound.audibleRadius) continue;
@@ -107,8 +108,9 @@ Result<PursuitDecision> PerceptionMemory::update(
     while (stagedSounds.size() > maxSoundIds) {
         auto oldest = stagedSounds.begin();
         for (auto it = stagedSounds.begin(); it != stagedSounds.end(); ++it)
-            if (it->second < oldest->second
-                || (it->second == oldest->second && it->first > oldest->first))
+            if (it->second.lastTick < oldest->second.lastTick
+                || (it->second.lastTick == oldest->second.lastTick
+                    && it->first > oldest->first))
                 oldest = it;
         stagedSounds.erase(oldest);
     }
@@ -137,6 +139,10 @@ void PerceptionMemory::forgetRegion(RegionId region) noexcept
 {
     for (auto it = _memory.begin(); it != _memory.end();) {
         if (it->second.lastKnown.region == region) it = _memory.erase(it);
+        else ++it;
+    }
+    for (auto it = _seenSounds.begin(); it != _seenSounds.end();) {
+        if (it->second.region == region) it = _seenSounds.erase(it);
         else ++it;
     }
 }

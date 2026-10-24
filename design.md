@@ -302,7 +302,12 @@ PerceptionMemory is one-NPC, single-thread state. Sight targets carry stable per
 feet/navigation locations and optional aim points. A valid in-range/cone target is visible
 only when the Host's current-world occlusion query returns clear. Query failure aborts the
 whole update without changing tick, memory or sound receipts. Unique sound event IDs prevent
-short-window redelivery from refreshing memory. Heard locations and last-seen feet become
+short-window redelivery from refreshing memory.
+Sound receipts are inserted only for actually audible events. An event first
+observed out of region or radius remains eligible if the Host supplies that
+same event when the listener later enters range. Once heard, its ID is
+deduplicated until expiry or region unload.
+Heard locations and last-seen feet become
 bounded, expiring records; visual observations win over sound in the current tick. The
 returned Chase/Search/Return goal is a suggestion for an AYBehavior/NavigationExecutor
 command, not authority over game permissions or interruption. `forgetRegion` removes

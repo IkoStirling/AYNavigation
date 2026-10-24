@@ -225,6 +225,25 @@ void visualAudioMemory()
     auto afterUnload = memory.update(10, eye, {1, 0, 0}, {}, {}, home, visibility);
     check(bool(afterUnload) && afterUnload.value.mode == PursuitMode::Return,
           "unloaded target cannot be pursued");
+
+    PerceptionMemory approaching({10.0, 0.8, 3, 4});
+    const std::array persistentSound{SoundStimulus{102, "distant-target",
+        {1, {5.5, 1.7, 0.5}}, 2.0}};
+    auto outside = approaching.update(1, eye, {1, 0, 0}, {}, persistentSound,
+                                      home, visibility);
+    check(bool(outside) && outside.value.mode == PursuitMode::Return,
+          "inaudible sound does not enter memory");
+    const Location nearEye{1, {4.5, 1.7, 0.5}};
+    auto entered = approaching.update(2, nearEye, {1, 0, 0}, {}, persistentSound,
+                                      home, visibility);
+    check(bool(entered) && entered.value.mode == PursuitMode::Search
+          && entered.value.targetPersistentId == "distant-target",
+          "same event can be heard after entering its radius");
+    auto repeated = approaching.update(3, eye, {1, 0, 0}, {}, persistentSound,
+                                       home, visibility);
+    check(bool(repeated) && repeated.value.mode == PursuitMode::Search
+          && repeated.value.goal == persistentSound.front().location,
+          "heard event stays deduplicated");
 }
 void stackedFloorsNeedExplicitTraversal()
 {

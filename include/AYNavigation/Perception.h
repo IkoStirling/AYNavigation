@@ -16,7 +16,9 @@ struct SightTarget {
 };
 
 /// A current fixed-step sound fact. Event IDs must be unique while retained;
-/// repeated delivery of the same ID does not refresh memory.
+/// repeated delivery of the same ID after it is heard does not refresh memory.
+/// An inaudible event is not consumed, so a listener entering its radius while
+/// the Host still supplies it can hear it once.
 struct SoundStimulus {
     std::uint64_t eventId = 0;
     std::string sourcePersistentId;

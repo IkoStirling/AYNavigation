@@ -58,11 +58,11 @@ Result<PursuitDecision> PerceptionMemory::update(
 
     for (const auto& sound : sounds) {
         if (stagedSounds.contains(sound.eventId)) continue;
-        stagedSounds.emplace(sound.eventId,
-                             SeenSound{sound.location.region, tick});
         if (sound.location.region != eye.region
             || length(sound.location.position - eye.position)
                    > sound.audibleRadius) continue;
+        stagedSounds.emplace(sound.eventId,
+                             SeenSound{sound.location.region, tick});
         stagedMemory[sound.sourcePersistentId] = {sound.location, tick};
     }
 

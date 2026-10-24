@@ -245,7 +245,8 @@ and no manual desktop/Release/backend matrix/cross-platform/crowd qualification 
 ## 10. Static topology bake and perception (v0.4)
 
 StaticBakeWorld owns versioned authoring input by persistent region ID. Each BakeRegion
-describes one horizontal floor rectangle and static axis-aligned blocker boxes. The Host
+describes one horizontal floor rectangle, up to sixteen additional flat floors or
+planar ramps, and static axis-aligned blocker boxes. The Host
 extracts these from current Scene content; dynamic actors remain in ObstacleSource. The
 config bounds cell/link count and fixes cell size, corridor width and agent height. Every
 cell center must have a clear rectangular corridor footprint, and every adjacent link must
@@ -267,15 +268,22 @@ Connections are explicit directed special links whose endpoints snap to a free c
 one cell size. Their traversal kind/resource/capacity are authored from the same connected
 space topology as movement; the bake does not move an Entity or physical body. A real
 Traversal must use the existing connected-space authority. The simple bake intentionally
-excludes slopes, arbitrary meshes, exact dynamic obstacle shapes and
+excludes arbitrary mesh NavMesh, curved/nonplanar slopes, exact dynamic obstacle shapes and
 incremental tile updates; a region edit rebuilds the bounded graph.
-Up to sixteen additional horizontal floors may be authored in one region.
-Each floor receives an independent bounded grid and shares the region's
+Up to sixteen additional flat floors or planar ramps may be authored in one region.
+Each surface receives an independent bounded grid and shares the region's
 content version and blockers. Same-height overlapping surfaces are invalid;
 different heights stay disconnected unless an authored same-region special
 connection snaps to distinct nodes. The World extraction adapter accepts an
 ordered list of persistent static Box floor IDs and validates one solid shape
-per ID; it does not infer stairs or arbitrary mesh surfaces.
+per ID. The primary Box stays horizontal; a secondary tilted Box must project
+its upward top onto an axis-aligned XZ rectangle. The top's four heights must
+form one plane. A ramp's cell heights are interpolated from those corners;
+ordinary links are admitted only within `maxRisePerHorizontal`, with 3D
+distance reflected in cost. A ramp cannot overlap another authored surface
+in XZ interior. Spatial steering and a compatible motor are required for
+ascending ordinary links; Planar steering rejects height-changing motion.
+This does not infer stairs or arbitrary mesh surfaces.
 
 PerceptionMemory is one-NPC, single-thread state. Sight targets carry stable persistent IDs,
 feet/navigation locations and optional aim points. A valid in-range/cone target is visible
@@ -295,7 +303,8 @@ live Jolt/audio/Scene lifecycle wiring remains Host work.
 `AYNavigation::WorldAdapter` is an opt-in assembly over public Entity World and
 Physics query interfaces. It accepts `scene.world()` after Scene or RegionStream
 attachment on the owner thread. A floor is identified by its persistent Entity ID
-and must have exactly one static, non-trigger 3D Box shape with a horizontal top.
+and must have exactly one static, non-trigger 3D Box shape. The first ID must
+have a horizontal top; later IDs may describe the bounded planar ramp above.
 All other static non-trigger 3D Box colliders in the same effective region become
 blocker AABBs, transformed through their composed World matrix. Rotated blocker
 boxes use conservative world AABBs; non-Box static solids reject the whole bake

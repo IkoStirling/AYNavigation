@@ -23,7 +23,7 @@
 
 ## Static walkable bake and NPC perception
 
-`StaticBakeWorld` converts bounded, horizontal walkable floor rectangles and static blocker
+`StaticBakeWorld` converts bounded horizontal floors, planar ramp rectangles and static blocker
 boxes into an immutable `GraphSpace` revision. The caller extracts these shapes from Scene
 content, supplies persistent region IDs and increasing content versions, and publishes the
 new graph to `Navigator::publish` at a quiescent frame boundary. A failed bake retains the
@@ -31,10 +31,13 @@ previous graph. Unloading one region removes its nodes and disables its cross-re
 reloading the region restores links declared with `setConnections`. Each directed connection
 names a `TraversalKind` that the caller must register with Navigator and implement with the
 real connected-space movement authority.
-One region may contain up to 17 stacked horizontal floor rectangles (one primary
-and 16 additional surfaces). Each floor has an independent grid; an authored directed
+One region may contain one primary horizontal floor and up to 16 additional flat
+floors or planar ramps. Each surface has an independent grid; an authored directed
 same-region `BakeConnection` with a registered traversal kind joins selected levels.
-Overlapping floors at the same height are rejected before publication.
+Overlapping flat floors at the same height, and any ramp overlapping another
+surface in XZ interior, are rejected before publication. Ordinary ramp links
+respect `BakeConfig::maxRisePerHorizontal`; use Spatial steering and a motor
+that can follow the slope because Planar steering rejects vertical velocity.
 
 `PerceptionMemory` receives stable target IDs, target feet/aim points, current-step sound
 stimuli, and a Host-owned visibility query. It returns a generic Chase, Search or Return
@@ -52,14 +55,15 @@ route invalidation, visual and audio memory, query failure and expiration.
 
 This is a layered 2.5D rectangular static-geometry bake, not general NavMesh generation. Scene
 geometry extraction, physics ray occlusion, sound emission and special region traversal are
-Host adapters. The module does not infer static meshes or bake sloped surfaces; the
-World adapter extracts one floor by default; its span overload accepts an ordered
-list of up to 17 persistent static Box floor IDs for layered extraction.
+Host adapters. The module does not infer static meshes or generate a polygon NavMesh.
+The World adapter extracts one flat floor by default; its span overload accepts
+an ordered list of up to 17 persistent static Box IDs, with the first horizontal
+and later boxes optionally tilted into supported planar ramps.
 
 Enable `AY_NAVIGATION_BUILD_WORLD_ADAPTER=ON` when `AYEntityCore` is present. At a
 quiescent frame boundary **after** a Scene or `WorldRegionStream` has attached its
 physics components, pass `scene.world()` to `WorldBakeAdapter` and publish a region
-with authored persistent IDs for one or more static Box floors. Every other static,
+with authored persistent IDs for static Box floors and ramps. Every other static,
 non-trigger 3D Box collider in that region is extracted as a conservative blocker
 from its composed World matrix. An unsupported static solid shape fails extraction;
 the prior graph stays live. The caller must increment the content version whenever

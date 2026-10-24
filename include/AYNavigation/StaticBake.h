@@ -14,8 +14,18 @@ struct BakeBox {
     bool operator==(const BakeBox&) const = default;
 };
 
-/// One horizontal walkable floor and the static boxes above it. The authoring
-/// tool/Host supplies finite world-space geometry and a persistent region ID.
+/// Axis-aligned XZ footprint with one planar walkable top. Heights correspond
+/// to (minX,minZ), (maxX,minZ), (minX,maxZ), (maxX,maxZ). Adjacent horizontal
+/// floors still require an authored traversal connection.
+struct BakeRamp {
+    BakeBox footprint;
+    double y00 = 0, y10 = 0, y01 = 0, y11 = 0;
+    bool operator==(const BakeRamp&) const = default;
+};
+
+/// One primary horizontal floor, optional extra flat/ramp surfaces and static
+/// blockers. The authoring tool/Host supplies finite world-space geometry and
+/// a persistent region ID.
 struct BakeRegion {
     RegionId id = 0;
     std::uint64_t contentVersion = 0;
@@ -25,6 +35,9 @@ struct BakeRegion {
     /// bakes an independent grid; authored same-region BakeConnections join
     /// floors by a registered traversal (stairs, ladder, lift, etc.).
     std::vector<BakeBox> additionalFloors;
+    /// Optional planar ramps, each on its own grid; footprints must not
+    /// overlap flat floors or other ramps in XZ interior.
+    std::vector<BakeRamp> ramps;
     bool operator==(const BakeRegion&) const = default;
 };
 
@@ -43,6 +56,8 @@ struct BakeConfig {
     double cellSize = 1.0;
     double corridorWidth = 1.0;
     double agentHeight = 1.8;
+    /// Maximum rise per horizontal unit for an ordinary grid link.
+    double maxRisePerHorizontal = 1.0;
     std::size_t maxCells = 10000;
     std::size_t maxLinks = 50000;
 };
@@ -56,7 +71,7 @@ struct BakeReport {
     std::size_t disabledConnections = 0;
 };
 
-/// Bounded, deterministic 2.5D grid bake into the existing immutable
+/// Bounded, deterministic 2.5D flat/ramp grid bake into the existing immutable
 /// GraphSpace. Changes publish a new revision atomically; failed bakes leave
 /// the previous graph and authoring inputs untouched. Not a NavMesh solver.
 class StaticBakeWorld {

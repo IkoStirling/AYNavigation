@@ -10,6 +10,7 @@
 #include <AYEntity/components/RigidBodyComponent.h>
 #include <AYEntity/components/TransformComponent.h>
 #include <array>
+#include <cmath>
 
 using namespace ayt::navigation;
 
@@ -52,6 +53,25 @@ constexpr auto obstacleId = "00000000000000000000000000000012";
 constexpr auto targetId = "00000000000000000000000000000013";
 constexpr auto observerId = "00000000000000000000000000000014";
 constexpr auto upperFloorId = "00000000000000000000000000000015";
+constexpr auto rampId = "00000000000000000000000000000016";
+
+void tilted_box_extracts_a_bounded_ramp()
+{
+    Fixture fixture;
+    fixture.box(floorId, {3, -0.5f, 3}, {3, 0.5f, 3});
+    auto* ramp = fixture.box(rampId, {8.1f, 0.1f, 3}, {2, 0.25f, 1});
+    constexpr float halfAngle = 0.1f;
+    ramp->transform()->setRotation(0, 0,
+        std::sin(halfAngle), std::cos(halfAngle));
+    const std::array<std::string_view, 2> floors{floorId, rampId};
+    auto extracted = extractWorldBakeRegion(fixture.world, 1, 1, floors);
+    CHECK(extracted && extracted.value.ramps.size() == 1
+        && extracted.value.additionalFloors.empty());
+    StaticBakeWorld bake(82);
+    WorldBakeAdapter adapter(fixture.world, bake);
+    auto published = adapter.publishRegion(1, 1, floors);
+    CHECK(published && published.value && bake.report().nodes > 36);
+}
 
 void stacked_world_floor_extraction_preserves_published_graph()
 {
@@ -157,6 +177,7 @@ void physics_ray_uses_world_identity_and_region_mask()
 
 TEST_MAIN(
     RUN(stacked_world_floor_extraction_preserves_published_graph);
+    RUN(tilted_box_extracts_a_bounded_ramp);
     RUN(world_geometry_and_unload);
     RUN(physics_ray_uses_world_identity_and_region_mask);
 )

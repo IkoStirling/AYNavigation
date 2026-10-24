@@ -20,7 +20,8 @@ BakeRegion room(RegionId id, double minX, double maxX)
 
 PlanResult route(std::shared_ptr<const GraphSpace> graph,
                  Location from, Location to,
-                 std::vector<TraversalKind> traversals = {})
+                 std::vector<TraversalKind> traversals = {},
+                 Steering steering = Steering::Planar)
 {
     PlanRequest request;
     request.id = 1;
@@ -28,7 +29,7 @@ PlanResult route(std::shared_ptr<const GraphSpace> graph,
     request.task = 1;
     request.from = from;
     request.goal = to;
-    request.profile.steering = Steering::Planar;
+    request.profile.steering = steering;
     request.space = std::move(graph);
     request.traversals = std::move(traversals);
     return GraphPlanner{}.poll(request);
@@ -230,6 +231,66 @@ void stackedFloorsNeedExplicitTraversal()
           && bake.report().stamp == before,
           "duplicate same-height floor rejects without publication");
 }
+
+void planarRampRespectsGradeAndAtomicRevision()
+{
+    auto region = room(1, 0.0, 2.0);
+    region.floor.maximum.z = 2.0;
+    region.additionalFloors.push_back({{6.0, 1.0, 0.0}, {8.0, 2.0, 2.0}});
+    region.ramps.push_back({{{2.0, -0.5, 0.0}, {6.0, 2.0, 2.0}},
+                            0.0, 2.0, 0.0, 2.0});
+    const BakeConnection enter{1, 1, {1.5, 0.0, 0.5},
+        {2.5, 0.25, 0.5}, 24, 0, 0};
+    const BakeConnection leave{1, 1, {5.5, 1.75, 0.5},
+        {6.5, 2.0, 0.5}, 25, 0, 0};
+    StaticBakeWorld bake(92);
+    auto published = bake.publishRegion(region);
+    check(bool(published) && bake.report().nodes == 16,
+          "flat and sloped surfaces create separate cells");
+    auto connected = bake.setConnections({enter, leave});
+    const auto start = Location{1, {0.5, 0.0, 0.5}};
+    const auto goal = Location{1, {7.5, 2.0, 0.5}};
+    check(bool(connected) && route(connected.value, start, goal,
+          {24, 25}, Steering::Spatial).status
+          == PlanStatus::Found, "route ascends planar ramp");
+    const auto before = bake.report().stamp;
+    auto nonplanar = region;
+    nonplanar.contentVersion = 2;
+    nonplanar.ramps.front().y11 = 1.5;
+    check(bake.publishRegion(nonplanar).error == Error::Invalid
+          && bake.report().stamp == before,
+          "nonplanar ramp leaves prior graph intact");
+    auto overlap = region;
+    overlap.contentVersion = 2;
+    overlap.ramps.front().footprint.minimum.x = 1.0;
+    check(bake.publishRegion(overlap).error == Error::Invalid
+          && bake.report().stamp == before,
+          "overlapping surface leaves prior graph intact");
+    auto blocked = region;
+    blocked.contentVersion = 2;
+    blocked.blockers.push_back({{3.0, 0.0, 0.0}, {4.0, 3.0, 2.0}});
+    auto blockedGraph = bake.publishRegion(blocked);
+    check(bool(blockedGraph) && bake.report().blockedCells > 0
+          && route(blockedGraph.value, start, goal,
+             {24, 25}, Steering::Spatial).status == PlanStatus::Unreachable,
+          "ramp headroom blocker closes the route");
+    auto under = region;
+    under.contentVersion = 3;
+    under.blockers.push_back({{3.0, -2.0, 0.0}, {4.0, -1.0, 2.0}});
+    auto underGraph = bake.publishRegion(under);
+    check(bool(underGraph) && route(underGraph.value, start, goal,
+          {24, 25}, Steering::Spatial).status == PlanStatus::Found,
+          "blocker below the ramp leaves headroom clear");
+
+    BakeConfig restricted;
+    restricted.maxRisePerHorizontal = 0.25;
+    StaticBakeWorld steep(93, restricted);
+    check(bool(steep.publishRegion(region)), "restricted bake accepts authored ramp");
+    auto restrictedGraph = steep.setConnections({enter, leave});
+    check(bool(restrictedGraph) && route(restrictedGraph.value, start, goal,
+          {24, 25}, Steering::Spatial).status == PlanStatus::Unreachable,
+          "ordinary links reject an excessive grade");
+}
 } // namespace
 
 int main()
@@ -238,6 +299,7 @@ int main()
         bakeAndUpdate();
         visualAudioMemory();
         stackedFloorsNeedExplicitTraversal();
+        planarRampRespectsGradeAndAtomicRevision();
         std::cout << "AYNavigation: spatial awareness passed\n";
     } catch (const std::exception& error) {
         std::cerr << "AYNavigation: " << error.what() << '\n';

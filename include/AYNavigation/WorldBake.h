@@ -10,8 +10,8 @@ namespace ayt::entity { class World; }
 namespace ayt::navigation {
 
 /// Optional Scene-World adapter. Call only after Scene/RegionStream has attached
-/// all colliders at a quiescent boundary. The floor is one static Box entity;
-/// other static non-trigger Box colliders in that region become blockers.
+/// all colliders at a quiescent boundary. The primary floor is one horizontal
+/// static Box entity; other static non-trigger Box colliders become blockers.
 /// Unsupported static shapes fail the whole extraction instead of opening an
 /// unsafe path. The caller increments contentVersion after any static change.
 Result<BakeRegion> extractWorldBakeRegion(const entity::World& world,
@@ -19,8 +19,10 @@ Result<BakeRegion> extractWorldBakeRegion(const entity::World& world,
     std::string_view floorPersistentId);
 
 /// Extract an authored primary floor and up to sixteen additional floors.
-/// IDs must be unique and each name exactly one static Box entity. Other
-/// static solids remain blockers; no floor or blocker is silently skipped.
+/// IDs must be unique and each name exactly one static Box entity. Secondary
+/// Boxes may have an upward planar top with an axis-aligned XZ footprint and
+/// become ramp grids. Other static solids remain blockers; unsupported skew,
+/// trigger or non-Box geometry fails the whole extraction.
 Result<BakeRegion> extractWorldBakeRegion(const entity::World& world,
     RegionId region, std::uint64_t contentVersion,
     std::span<const std::string_view> floorPersistentIds);

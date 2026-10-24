@@ -19,10 +19,42 @@ bool validBox(const BakeBox& box, bool floor)
                   : box.minimum.y < box.maximum.y);
 }
 
-bool intersects(double minX, double maxX, double minZ, double maxZ,
-                const BakeBox& blocker, double floorY, double height)
+bool overlapXZ(const BakeBox& a, const BakeBox& b) noexcept
 {
-    if (blocker.maximum.y <= floorY || blocker.minimum.y >= floorY + height)
+    return a.minimum.x < b.maximum.x && a.maximum.x > b.minimum.x
+        && a.minimum.z < b.maximum.z && a.maximum.z > b.minimum.z;
+}
+
+bool validRamp(const BakeRamp& ramp)
+{
+    if (!validBox(ramp.footprint, true)) return false;
+    const double heights[]{ramp.y00, ramp.y10, ramp.y01, ramp.y11};
+    for (double y : heights)
+        if (!std::isfinite(y) || y < ramp.footprint.minimum.y
+            || y > ramp.footprint.maximum.y) return false;
+    return std::abs((ramp.y00 + ramp.y11) - (ramp.y10 + ramp.y01))
+        <= 1e-4;
+}
+
+double surfaceY(const BakeBox& floor, const BakeRamp* ramp,
+                double x, double z) noexcept
+{
+    if (!ramp) return floor.maximum.y;
+    const double u = (x - floor.minimum.x) /
+        (floor.maximum.x - floor.minimum.x);
+    const double v = (z - floor.minimum.z) /
+        (floor.maximum.z - floor.minimum.z);
+    return (1.0 - u) * (1.0 - v) * ramp->y00
+        + u * (1.0 - v) * ramp->y10
+        + (1.0 - u) * v * ramp->y01 + u * v * ramp->y11;
+}
+
+bool intersects(double minX, double maxX, double minZ, double maxZ,
+                const BakeBox& blocker, double minFloorY,
+                double maxFloorY, double height)
+{
+    if (blocker.maximum.y <= minFloorY
+        || blocker.minimum.y >= maxFloorY + height)
         return false;
     return blocker.minimum.x < maxX && blocker.maximum.x > minX
         && blocker.minimum.z < maxZ && blocker.maximum.z > minZ;
@@ -41,7 +73,8 @@ bool clearCorridor(const BakeRegion& region, const BakeBox& floor, Vec3 a, Vec3 
         return false;
     for (const auto& blocker : region.blockers)
         if (intersects(minX, maxX, minZ, maxZ, blocker,
-                       floor.maximum.y, height)) return false;
+                       std::min(a.y, b.y), std::max(a.y, b.y), height))
+            return false;
     return true;
 }
 
@@ -61,7 +94,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::publishRegion(
     BakeRegion region)
 {
     if (!region.id || !region.contentVersion || !validBox(region.floor, true)
-        || region.additionalFloors.size() > 16)
+        || region.additionalFloors.size() + region.ramps.size() > 16)
         return {Error::Invalid};
     for (const auto& floor : region.additionalFloors)
         if (!validBox(floor, true)) return {Error::Invalid};
@@ -77,6 +110,16 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::publishRegion(
     }
     for (const auto& blocker : region.blockers)
         if (!validBox(blocker, false)) return {Error::Invalid};
+    for (std::size_t i = 0; i < region.ramps.size(); ++i) {
+        const auto& ramp = region.ramps[i];
+        if (!validRamp(ramp) || overlapXZ(region.floor, ramp.footprint))
+            return {Error::Invalid};
+        for (const auto& flat : region.additionalFloors)
+            if (overlapXZ(flat, ramp.footprint)) return {Error::Invalid};
+        for (std::size_t j = 0; j < i; ++j)
+            if (overlapXZ(region.ramps[j].footprint, ramp.footprint))
+                return {Error::Invalid};
+    }
     if (const auto old = _regions.find(region.id); old != _regions.end()) {
         if (region.contentVersion < old->second.contentVersion)
             return {Error::Stale};
@@ -121,10 +164,13 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     if (!_spaceId || !std::isfinite(_config.cellSize)
         || !std::isfinite(_config.corridorWidth)
         || !std::isfinite(_config.agentHeight)
+        || !std::isfinite(_config.maxRisePerHorizontal)
         || _config.cellSize <= 0.0 || _config.cellSize > 1e6
         || _config.corridorWidth <= 0.0
         || _config.corridorWidth > _config.cellSize
         || _config.agentHeight <= 0.0 || _config.agentHeight > 1e6
+        || _config.maxRisePerHorizontal <= 0.0
+        || _config.maxRisePerHorizontal > 10.0
         || !_config.maxCells || !_config.maxLinks
         || _report.stamp.version == std::numeric_limits<std::uint64_t>::max())
         return {Error::Invalid};
@@ -147,13 +193,25 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     std::size_t cellCount = 0;
     const auto maxCells = std::min<std::size_t>(_config.maxCells, 10000);
     const auto cost = static_cast<std::uint64_t>(std::ceil(_config.cellSize * 1000.0));
+    const auto surfaceCount = [](const BakeRegion& region) {
+        return 1 + region.additionalFloors.size() + region.ramps.size();
+    };
     const auto floorAt = [](const BakeRegion& region, std::size_t index)
         -> const BakeBox& {
-        return index == 0 ? region.floor : region.additionalFloors[index - 1];
+        if (index == 0) return region.floor;
+        if (index <= region.additionalFloors.size())
+            return region.additionalFloors[index - 1];
+        return region.ramps[index - 1 - region.additionalFloors.size()].footprint;
+    };
+    const auto rampAt = [](const BakeRegion& region, std::size_t index)
+        -> const BakeRamp* {
+        if (index <= region.additionalFloors.size()) return nullptr;
+        return &region.ramps[index - 1 - region.additionalFloors.size()];
     };
     for (const auto& [regionId, region] : regions) {
-      for (std::size_t floorIndex = 0; floorIndex <= region.additionalFloors.size(); ++floorIndex) {
+      for (std::size_t floorIndex = 0; floorIndex < surfaceCount(region); ++floorIndex) {
         const auto& floor = floorAt(region, floorIndex);
+        const auto* ramp = rampAt(region, floorIndex);
         const double dx = floor.maximum.x - floor.minimum.x;
         const double dz = floor.maximum.z - floor.minimum.z;
         if (!std::isfinite(dx) || !std::isfinite(dz)
@@ -175,7 +233,9 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
             for (std::size_t x = 0; x < nx; ++x) {
                 const Vec3 center{
                     floor.minimum.x + (double(x) + 0.5) * _config.cellSize,
-                    floor.maximum.y,
+                    surfaceY(floor, ramp,
+                        floor.minimum.x + (double(x) + 0.5) * _config.cellSize,
+                        floor.minimum.z + (double(z) + 0.5) * _config.cellSize),
                     floor.minimum.z + (double(z) + 0.5) * _config.cellSize};
                 if (!clearCorridor(region, floor, center, center,
                                    _config.corridorWidth, _config.agentHeight)) {
@@ -191,7 +251,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     }
     if (graph.nodes.empty()) return {Error::NoPath};
     for (const auto& [regionId, region] : regions) {
-      for (std::size_t floorIndex = 0; floorIndex <= region.additionalFloors.size(); ++floorIndex) {
+      for (std::size_t floorIndex = 0; floorIndex < surfaceCount(region); ++floorIndex) {
         const auto& floor = floorAt(region, floorIndex);
         const auto& grid = grids.at({regionId, floorIndex});
         for (std::size_t z = 0; z < grid.nz; ++z) {
@@ -205,17 +265,23 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
                     if (!neighbor) continue;
                     const auto a = graph.nodes[id - 1].location.position;
                     const auto b = graph.nodes[neighbor - 1].location.position;
+                    const double horizontal = std::hypot(a.x - b.x, a.z - b.z);
+                    if (std::abs(a.y - b.y)
+                        > _config.maxRisePerHorizontal * horizontal + 1e-9)
+                        continue;
                     if (!clearCorridor(region, floor, a, b,
                                        _config.corridorWidth, _config.agentHeight))
                         continue;
                     if (graph.links.size() + 2 > std::min<std::size_t>(
                             _config.maxLinks, 50000)) return {Error::Budget};
+                    const auto linkCost = static_cast<std::uint64_t>(
+                        std::ceil(length(b - a) * 1000.0));
                     graph.links.push_back({nextLink++, id, neighbor,
                                            _config.corridorWidth, _config.agentHeight,
-                                           cost});
+                                           linkCost});
                     graph.links.push_back({nextLink++, neighbor, id,
                                            _config.corridorWidth, _config.agentHeight,
-                                           cost});
+                                           linkCost});
                 }
             }
         }

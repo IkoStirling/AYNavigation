@@ -28,7 +28,7 @@ bool intersects(double minX, double maxX, double minZ, double maxZ,
         && blocker.minimum.z < maxZ && blocker.maximum.z > minZ;
 }
 
-bool clearCorridor(const BakeRegion& region, Vec3 a, Vec3 b,
+bool clearCorridor(const BakeRegion& region, const BakeBox& floor, Vec3 a, Vec3 b,
                    double width, double height)
 {
     const double half = width * 0.5;
@@ -36,12 +36,12 @@ bool clearCorridor(const BakeRegion& region, Vec3 a, Vec3 b,
     const double maxX = std::max(a.x, b.x) + half;
     const double minZ = std::min(a.z, b.z) - half;
     const double maxZ = std::max(a.z, b.z) + half;
-    if (minX < region.floor.minimum.x || maxX > region.floor.maximum.x
-        || minZ < region.floor.minimum.z || maxZ > region.floor.maximum.z)
+    if (minX < floor.minimum.x || maxX > floor.maximum.x
+        || minZ < floor.minimum.z || maxZ > floor.maximum.z)
         return false;
     for (const auto& blocker : region.blockers)
         if (intersects(minX, maxX, minZ, maxZ, blocker,
-                       region.floor.maximum.y, height)) return false;
+                       floor.maximum.y, height)) return false;
     return true;
 }
 
@@ -60,8 +60,21 @@ StaticBakeWorld::StaticBakeWorld(std::uint64_t spaceId, BakeConfig config)
 Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::publishRegion(
     BakeRegion region)
 {
-    if (!region.id || !region.contentVersion || !validBox(region.floor, true))
+    if (!region.id || !region.contentVersion || !validBox(region.floor, true)
+        || region.additionalFloors.size() > 16)
         return {Error::Invalid};
+    for (const auto& floor : region.additionalFloors)
+        if (!validBox(floor, true)) return {Error::Invalid};
+    for (std::size_t i = 0; i <= region.additionalFloors.size(); ++i) {
+        const auto& a = i == 0 ? region.floor : region.additionalFloors[i - 1];
+        for (std::size_t j = i + 1; j <= region.additionalFloors.size(); ++j) {
+            const auto& b = j == 0 ? region.floor : region.additionalFloors[j - 1];
+            if (std::abs(a.maximum.y - b.maximum.y) < 0.001
+                && a.minimum.x < b.maximum.x && a.maximum.x > b.minimum.x
+                && a.minimum.z < b.maximum.z && a.maximum.z > b.minimum.z)
+                return {Error::Invalid};
+        }
+    }
     for (const auto& blocker : region.blockers)
         if (!validBox(blocker, false)) return {Error::Invalid};
     if (const auto old = _regions.find(region.id); old != _regions.end()) {
@@ -89,8 +102,10 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::setConnections(
     std::vector<BakeConnection> connections)
 {
     for (const auto& connection : connections) {
-        if (!connection.from || !connection.to || connection.from == connection.to
+        if (!connection.from || !connection.to
             || !finite(connection.departure) || !finite(connection.arrival)
+            || (connection.from == connection.to
+                && length(connection.departure - connection.arrival) < 0.001)
             || !connection.traversal
             || bool(connection.resource) != bool(connection.capacity))
             return {Error::Invalid};
@@ -126,15 +141,21 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     }
     GraphDefinition graph;
     graph.stamp = report.stamp;
-    std::map<RegionId, RegionGrid> grids;
+    std::map<std::pair<RegionId, std::size_t>, RegionGrid> grids;
     NodeId nextNode = 1;
     LinkId nextLink = 1;
     std::size_t cellCount = 0;
     const auto maxCells = std::min<std::size_t>(_config.maxCells, 10000);
     const auto cost = static_cast<std::uint64_t>(std::ceil(_config.cellSize * 1000.0));
+    const auto floorAt = [](const BakeRegion& region, std::size_t index)
+        -> const BakeBox& {
+        return index == 0 ? region.floor : region.additionalFloors[index - 1];
+    };
     for (const auto& [regionId, region] : regions) {
-        const double dx = region.floor.maximum.x - region.floor.minimum.x;
-        const double dz = region.floor.maximum.z - region.floor.minimum.z;
+      for (std::size_t floorIndex = 0; floorIndex <= region.additionalFloors.size(); ++floorIndex) {
+        const auto& floor = floorAt(region, floorIndex);
+        const double dx = floor.maximum.x - floor.minimum.x;
+        const double dz = floor.maximum.z - floor.minimum.z;
         if (!std::isfinite(dx) || !std::isfinite(dz)
             || dx < _config.cellSize || dz < _config.cellSize)
             return {Error::Invalid};
@@ -153,10 +174,10 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
         for (std::size_t z = 0; z < nz; ++z) {
             for (std::size_t x = 0; x < nx; ++x) {
                 const Vec3 center{
-                    region.floor.minimum.x + (double(x) + 0.5) * _config.cellSize,
-                    region.floor.maximum.y,
-                    region.floor.minimum.z + (double(z) + 0.5) * _config.cellSize};
-                if (!clearCorridor(region, center, center,
+                    floor.minimum.x + (double(x) + 0.5) * _config.cellSize,
+                    floor.maximum.y,
+                    floor.minimum.z + (double(z) + 0.5) * _config.cellSize};
+                if (!clearCorridor(region, floor, center, center,
                                    _config.corridorWidth, _config.agentHeight)) {
                     ++report.blockedCells;
                     continue;
@@ -165,11 +186,14 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
                 graph.nodes.push_back({nextNode++, {regionId, center}});
             }
         }
-        grids.emplace(regionId, std::move(grid));
+        grids.emplace(std::pair{regionId, floorIndex}, std::move(grid));
+      }
     }
     if (graph.nodes.empty()) return {Error::NoPath};
     for (const auto& [regionId, region] : regions) {
-        const auto& grid = grids.at(regionId);
+      for (std::size_t floorIndex = 0; floorIndex <= region.additionalFloors.size(); ++floorIndex) {
+        const auto& floor = floorAt(region, floorIndex);
+        const auto& grid = grids.at({regionId, floorIndex});
         for (std::size_t z = 0; z < grid.nz; ++z) {
             for (std::size_t x = 0; x < grid.nx; ++x) {
                 const auto id = grid.nodes[z * grid.nx + x];
@@ -181,7 +205,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
                     if (!neighbor) continue;
                     const auto a = graph.nodes[id - 1].location.position;
                     const auto b = graph.nodes[neighbor - 1].location.position;
-                    if (!clearCorridor(region, a, b,
+                    if (!clearCorridor(region, floor, a, b,
                                        _config.corridorWidth, _config.agentHeight))
                         continue;
                     if (graph.links.size() + 2 > std::min<std::size_t>(
@@ -195,6 +219,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
                 }
             }
         }
+      }
     }
     auto nearest = [&](RegionId regionId, Vec3 target) -> NodeId {
         NodeId bestId = 0;
@@ -216,7 +241,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
         }
         const auto from = nearest(connection.from, connection.departure);
         const auto to = nearest(connection.to, connection.arrival);
-        if (!from || !to) return {Error::NoPath};
+        if (!from || !to || from == to) return {Error::NoPath};
         if (graph.links.size() + 1 > std::min<std::size_t>(
                 _config.maxLinks, 50000)) return {Error::Budget};
         graph.links.push_back({nextLink++, from, to, _config.corridorWidth,

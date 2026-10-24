@@ -199,6 +199,37 @@ void visualAudioMemory()
     check(bool(afterUnload) && afterUnload.value.mode == PursuitMode::Return,
           "unloaded target cannot be pursued");
 }
+void stackedFloorsNeedExplicitTraversal()
+{
+    StaticBakeWorld bake(91);
+    auto layered = room(1, 0.0, 3.0);
+    layered.additionalFloors.push_back({{0.0, 3.0, 0.0}, {3.0, 4.0, 6.0}});
+    auto published = bake.publishRegion(layered);
+    check(bool(published) && bake.report().nodes == 36,
+          "two independent floor grids are baked");
+    const Location lower{1, {0.5, 0.0, 0.5}};
+    const Location upper{1, {0.5, 4.0, 0.5}};
+    check(route(published.value, lower, upper).status == PlanStatus::Unreachable,
+          "stacked floors do not connect by projection");
+    const BakeConnection stairs{1, 1, lower.position, upper.position, 23, 0, 0};
+    auto connected = bake.setConnections({stairs});
+    check(bool(connected) && connected.value,
+          "same-region authored traversal connects floors");
+    const auto planned = route(connected.value, lower, upper, {23});
+    check(planned.status == PlanStatus::Found,
+          "route reaches upper floor through traversal");
+    bool usedStairs = false;
+    for (const auto& step : planned.route.steps)
+        usedStairs |= step.traversal == 23;
+    check(usedStairs, "route records authored stairs traversal");
+    const auto before = bake.report().stamp;
+    auto duplicate = layered;
+    duplicate.contentVersion = 2;
+    duplicate.additionalFloors.front() = layered.floor;
+    check(bake.publishRegion(duplicate).error == Error::Invalid
+          && bake.report().stamp == before,
+          "duplicate same-height floor rejects without publication");
+}
 } // namespace
 
 int main()
@@ -206,6 +237,7 @@ int main()
     try {
         bakeAndUpdate();
         visualAudioMemory();
+        stackedFloorsNeedExplicitTraversal();
         std::cout << "AYNavigation: spatial awareness passed\n";
     } catch (const std::exception& error) {
         std::cerr << "AYNavigation: " << error.what() << '\n';

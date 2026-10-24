@@ -21,11 +21,15 @@ struct BakeRegion {
     std::uint64_t contentVersion = 0;
     BakeBox floor;
     std::vector<BakeBox> blockers;
+    /// Optional stacked walkable surfaces in the same region. Each surface
+    /// bakes an independent grid; authored same-region BakeConnections join
+    /// floors by a registered traversal (stairs, ladder, lift, etc.).
+    std::vector<BakeBox> additionalFloors;
     bool operator==(const BakeRegion&) const = default;
 };
 
-/// Explicit directed cross-region access. A traversal adapter must implement
-/// the same kind in Navigator; this only establishes route topology.
+/// Explicit directed access across regions or floors of one region. A
+/// traversal adapter must implement the same kind in Navigator.
 struct BakeConnection {
     RegionId from = 0, to = 0;
     Vec3 departure, arrival;

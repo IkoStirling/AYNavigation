@@ -3,6 +3,7 @@
 #include <AYNavigation/StaticBake.h>
 
 #include <string_view>
+#include <span>
 
 namespace ayt::entity { class World; }
 
@@ -17,6 +18,13 @@ Result<BakeRegion> extractWorldBakeRegion(const entity::World& world,
     RegionId region, std::uint64_t contentVersion,
     std::string_view floorPersistentId);
 
+/// Extract an authored primary floor and up to sixteen additional floors.
+/// IDs must be unique and each name exactly one static Box entity. Other
+/// static solids remain blockers; no floor or blocker is silently skipped.
+Result<BakeRegion> extractWorldBakeRegion(const entity::World& world,
+    RegionId region, std::uint64_t contentVersion,
+    std::span<const std::string_view> floorPersistentIds);
+
 /// Publishes World geometry into an existing bake. On region unload call
 /// unloadRegion after WorldRegionStream::unload and before issuing new routes.
 class WorldBakeAdapter {
@@ -26,6 +34,9 @@ public:
     Result<std::shared_ptr<const GraphSpace>> publishRegion(
         RegionId region, std::uint64_t contentVersion,
         std::string_view floorPersistentId);
+    Result<std::shared_ptr<const GraphSpace>> publishRegion(
+        RegionId region, std::uint64_t contentVersion,
+        std::span<const std::string_view> floorPersistentIds);
     Result<std::shared_ptr<const GraphSpace>> unloadRegion(RegionId region)
     { return _bake.unloadRegion(region); }
 private:

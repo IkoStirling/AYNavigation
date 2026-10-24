@@ -9,6 +9,7 @@
 #include <AYEntity/components/ColliderComponent.h>
 #include <AYEntity/components/RigidBodyComponent.h>
 #include <AYEntity/components/TransformComponent.h>
+#include <array>
 
 using namespace ayt::navigation;
 
@@ -50,6 +51,25 @@ constexpr auto floorId = "00000000000000000000000000000011";
 constexpr auto obstacleId = "00000000000000000000000000000012";
 constexpr auto targetId = "00000000000000000000000000000013";
 constexpr auto observerId = "00000000000000000000000000000014";
+constexpr auto upperFloorId = "00000000000000000000000000000015";
+
+void stacked_world_floor_extraction_preserves_published_graph()
+{
+    Fixture fixture;
+    fixture.box(floorId, {3, -0.5f, 3}, {3, 0.5f, 3});
+    fixture.box(upperFloorId, {3, 3.5f, 3}, {3, 0.5f, 3});
+    StaticBakeWorld bake(81);
+    WorldBakeAdapter adapter(fixture.world, bake);
+    const std::array<std::string_view, 2> floors{floorId, upperFloorId};
+    auto published = adapter.publishRegion(1, 1, floors);
+    CHECK(published && published.value && bake.report().nodes == 72);
+    const auto before = bake.current();
+    const std::array<std::string_view, 2> duplicate{floorId, floorId};
+    CHECK(adapter.publishRegion(1, 2, duplicate).error == Error::Invalid);
+    const std::array<std::string_view, 2> missing{floorId, targetId};
+    CHECK(adapter.publishRegion(1, 2, missing).error == Error::Missing);
+    CHECK(bake.current() == before);
+}
 
 void world_geometry_and_unload()
 {
@@ -130,6 +150,7 @@ void physics_ray_uses_world_identity_and_region_mask()
 } // namespace
 
 TEST_MAIN(
+    RUN(stacked_world_floor_extraction_preserves_published_graph);
     RUN(world_geometry_and_unload);
     RUN(physics_ray_uses_world_identity_and_region_mask);
 )

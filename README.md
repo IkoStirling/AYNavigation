@@ -31,6 +31,10 @@ previous graph. Unloading one region removes its nodes and disables its cross-re
 reloading the region restores links declared with `setConnections`. Each directed connection
 names a `TraversalKind` that the caller must register with Navigator and implement with the
 real connected-space movement authority.
+One region may contain up to 17 stacked horizontal floor rectangles (one primary
+and 16 additional surfaces). Each floor has an independent grid; an authored directed
+same-region `BakeConnection` with a registered traversal kind joins selected levels.
+Overlapping floors at the same height are rejected before publication.
 
 `PerceptionMemory` receives stable target IDs, target feet/aim points, current-step sound
 stimuli, and a Host-owned visibility query. It returns a generic Chase, Search or Return
@@ -46,14 +50,16 @@ follows chase, search, heard-location and home goals through the existing Naviga
 `AYNavigationSpatialAwarenessTest` covers obstacle detours, region load/unload/revision,
 route invalidation, visual and audio memory, query failure and expiration.
 
-This is a 2.5D rectangular static-geometry bake, not general NavMesh generation. Scene
+This is a layered 2.5D rectangular static-geometry bake, not general NavMesh generation. Scene
 geometry extraction, physics ray occlusion, sound emission and special region traversal are
-Host adapters. The module does not infer static meshes or bake sloped/multilevel surfaces.
+Host adapters. The module does not infer static meshes or bake sloped surfaces; the
+World adapter extracts one floor by default; its span overload accepts an ordered
+list of up to 17 persistent static Box floor IDs for layered extraction.
 
 Enable `AY_NAVIGATION_BUILD_WORLD_ADAPTER=ON` when `AYEntityCore` is present. At a
 quiescent frame boundary **after** a Scene or `WorldRegionStream` has attached its
 physics components, pass `scene.world()` to `WorldBakeAdapter` and publish a region
-with an authored persistent ID for its single static Box floor. Every other static,
+with authored persistent IDs for one or more static Box floors. Every other static,
 non-trigger 3D Box collider in that region is extracted as a conservative blocker
 from its composed World matrix. An unsupported static solid shape fails extraction;
 the prior graph stays live. The caller must increment the content version whenever

@@ -267,8 +267,15 @@ Connections are explicit directed special links whose endpoints snap to a free c
 one cell size. Their traversal kind/resource/capacity are authored from the same connected
 space topology as movement; the bake does not move an Entity or physical body. A real
 Traversal must use the existing connected-space authority. The simple bake intentionally
-excludes slopes, stacked floors, arbitrary meshes, exact dynamic obstacle shapes and
+excludes slopes, arbitrary meshes, exact dynamic obstacle shapes and
 incremental tile updates; a region edit rebuilds the bounded graph.
+Up to sixteen additional horizontal floors may be authored in one region.
+Each floor receives an independent bounded grid and shares the region's
+content version and blockers. Same-height overlapping surfaces are invalid;
+different heights stay disconnected unless an authored same-region special
+connection snaps to distinct nodes. The World extraction adapter accepts an
+ordered list of persistent static Box floor IDs and validates one solid shape
+per ID; it does not infer stairs or arbitrary mesh surfaces.
 
 PerceptionMemory is one-NPC, single-thread state. Sight targets carry stable persistent IDs,
 feet/navigation locations and optional aim points. A valid in-range/cone target is visible

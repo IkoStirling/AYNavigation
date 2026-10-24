@@ -33,7 +33,9 @@ names a `TraversalKind` that the caller must register with Navigator and impleme
 real connected-space movement authority.
 An updated region recalculates only its own walkable cells and local links;
 unchanged region fragments are shared across revisions. The complete graph is
-still recompiled for atomic publication. `BakeReport::geometryRebakes` reports
+still recompiled for atomic publication. Nodes and local links in unchanged
+resident regions retain their IDs when another region or its connections change;
+routes still use the new graph stamp and must be replanned. `BakeReport::geometryRebakes` reports
 how many region geometries were recalculated in the last publication.
 For current Scene geometry, `WorldBakeAdapter::refreshRegion` extracts the
 region and advances its content version only when floor, ramp or blocker geometry

@@ -292,6 +292,8 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     if (regions.empty()) {
         _regions = std::move(regions);
         _fragments.clear();
+        _nodeIds.clear();
+        _linkIds.clear();
         _connections = std::move(connections);
         _graph.reset();
         _report = report;
@@ -300,9 +302,20 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     GraphDefinition graph;
     graph.stamp = report.stamp;
     std::map<RegionId, std::shared_ptr<const RegionFragment>> fragments;
-    std::map<RegionId, NodeId> firstNode;
+    std::map<RegionId, std::vector<NodeId>> nodeIds;
+    std::map<RegionId, std::vector<LinkId>> linkIds;
     NodeId nextNode = 1;
     LinkId nextLink = 1;
+    if (_graph) {
+        for (const auto& node : _graph->definition().nodes) {
+            if (node.id == std::numeric_limits<NodeId>::max()) return {Error::Budget};
+            nextNode = std::max(nextNode, node.id + 1);
+        }
+        for (const auto& link : _graph->definition().links) {
+            if (link.id == std::numeric_limits<LinkId>::max()) return {Error::Budget};
+            nextLink = std::max(nextLink, link.id + 1);
+        }
+    }
     std::size_t cellCount = 0;
     const auto maxCells = std::min<std::size_t>(_config.maxCells, 10000);
     const auto maxLinks = std::min<std::size_t>(_config.maxLinks, 50000);
@@ -310,8 +323,9 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     for (const auto& [regionId, region] : regions) {
         const auto old = _regions.find(regionId);
         const auto cached = _fragments.find(regionId);
-        if (old != _regions.end() && cached != _fragments.end()
-            && old->second == region) {
+        const bool unchanged = old != _regions.end()
+            && cached != _fragments.end() && old->second == region;
+        if (unchanged) {
             fragments.emplace(regionId, cached->second);
         } else {
             auto baked = bakeRegion(region);
@@ -324,21 +338,45 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
         if (fragment.cells > maxCells - cellCount) return {Error::Budget};
         cellCount += fragment.cells;
         report.blockedCells += fragment.blockedCells;
-        firstNode.emplace(regionId, nextNode);
-        for (const auto& local : fragment.nodes)
-            graph.nodes.push_back({nextNode++, local.location});
+        auto& ids = nodeIds[regionId];
+        if (unchanged && _nodeIds.contains(regionId)
+            && _nodeIds.at(regionId).size() == fragment.nodes.size())
+            ids = _nodeIds.at(regionId);
+        else {
+            if (fragment.nodes.size() > std::numeric_limits<NodeId>::max() - nextNode)
+                return {Error::Budget};
+            ids.reserve(fragment.nodes.size());
+            for (std::size_t i = 0; i < fragment.nodes.size(); ++i)
+                ids.push_back(nextNode++);
+        }
+        for (std::size_t i = 0; i < fragment.nodes.size(); ++i)
+            graph.nodes.push_back({ids[i], fragment.nodes[i].location});
     }
     if (graph.nodes.empty()) return {Error::NoPath};
     for (const auto& [regionId, fragmentPtr] : fragments) {
         const auto& fragment = *fragmentPtr;
-        const auto offset = firstNode.at(regionId) - 1;
+        const auto& nodes = nodeIds.at(regionId);
         if (fragment.links.size() > maxLinks - graph.links.size())
             return {Error::Budget};
-        for (const auto& local : fragment.links) {
+        auto& ids = linkIds[regionId];
+        if (_fragments.contains(regionId)
+            && _fragments.at(regionId) == fragmentPtr
+            && _linkIds.contains(regionId)
+            && _linkIds.at(regionId).size() == fragment.links.size())
+            ids = _linkIds.at(regionId);
+        else {
+            if (fragment.links.size() > std::numeric_limits<LinkId>::max() - nextLink)
+                return {Error::Budget};
+            ids.reserve(fragment.links.size());
+            for (std::size_t i = 0; i < fragment.links.size(); ++i)
+                ids.push_back(nextLink++);
+        }
+        for (std::size_t i = 0; i < fragment.links.size(); ++i) {
+            const auto& local = fragment.links[i];
             auto link = local;
-            link.id = nextLink++;
-            link.from += offset;
-            link.to += offset;
+            link.id = ids[i];
+            link.from = nodes.at(local.from - 1);
+            link.to = nodes.at(local.to - 1);
             graph.links.push_back(link);
         }
     }
@@ -374,6 +412,8 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     report.links = compiled.value->definition().links.size();
     _regions = std::move(regions);
     _fragments = std::move(fragments);
+    _nodeIds = std::move(nodeIds);
+    _linkIds = std::move(linkIds);
     _connections = std::move(connections);
     _graph = compiled.value;
     _report = report;

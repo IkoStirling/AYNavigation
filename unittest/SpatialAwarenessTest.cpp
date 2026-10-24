@@ -53,6 +53,8 @@ void bakeAndUpdate()
     first.blockers.push_back({{2.0, 0.0, 2.0}, {4.0, 2.0, 4.0}});
     auto compiled = bake.publishRegion(first);
     check(bool(compiled) && compiled.value != nullptr, "first bake");
+    const auto firstNodeId = compiled.value->definition().nodes.front().id;
+    const auto firstLink = compiled.value->definition().links.front();
     check(bake.report().nodes > 0 && bake.report().blockedCells > 0
           && bake.report().geometryRebakes == 1,
           "bake diagnostic counts");
@@ -81,6 +83,16 @@ void bakeAndUpdate()
           && two.value->stamp().version > oldStamp.version
           && bake.report().geometryRebakes == 1,
           "second region revision reuses first geometry");
+    check(two.value->node(firstNodeId) != nullptr
+          && two.value->node(firstNodeId)->location.region == 1
+          && two.value->link(firstLink.id) != nullptr
+          && two.value->link(firstLink.id)->from == firstLink.from
+          && two.value->link(firstLink.id)->to == firstLink.to,
+          "unchanged resident region retains graph IDs");
+    NodeId secondNodeId = 0;
+    for (const auto& node : two.value->definition().nodes)
+        if (node.location.region == 2) { secondNodeId = node.id; break; }
+    check(secondNodeId != 0, "second region has node ID");
     const BakeConnection portal{1, 2, {5.5, 0.0, 0.5},
                                 {10.5, 0.0, 0.5}, 17, 88, 1};
     auto connected = bake.setConnections({portal});
@@ -110,6 +122,8 @@ void bakeAndUpdate()
     check(route(reloaded.value, {1, {5.5, 0.0, 0.5}},
                 {2, {10.5, 0.0, 0.5}}, {17}).status == PlanStatus::Found,
           "restored cross-region route");
+    for (const auto& node : reloaded.value->definition().nodes)
+        if (node.location.region == 2) { secondNodeId = node.id; break; }
 
     first.contentVersion = 2;
     first.blockers = {{{2.0, 0.0, 0.0}, {4.0, 2.0, 6.0}}};
@@ -117,6 +131,9 @@ void bakeAndUpdate()
     check(bool(blocked) && blocked.value != nullptr
           && bake.report().geometryRebakes == 1,
           "obstacle revision rebakes only changed region");
+    check(blocked.value->node(secondNodeId) != nullptr
+          && blocked.value->node(secondNodeId)->location.region == 2,
+          "editing first region retains second region node ID");
     check(route(blocked.value, start, goal).status == PlanStatus::Unreachable,
           "new static barrier invalidates old route");
     StationaryMotor motor;

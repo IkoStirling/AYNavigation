@@ -251,13 +251,15 @@ extracts these from current Scene content; dynamic actors remain in ObstacleSour
 config bounds cell/link count and fixes cell size, corridor width and agent height. Every
 cell center must have a clear rectangular corridor footprint, and every adjacent link must
 have a clear swept rectangle through full agent height. The result is a deterministic
-directed GraphDefinition compiled by existing GraphSpace. Node/link IDs are generated in
-sorted region/grid order within each snapshot; do not save them as persistent object IDs.
+directed GraphDefinition compiled by existing GraphSpace. New local node/link IDs are
+allocated above the previous graph's IDs; unchanged resident fragments reuse their IDs.
+Do not save them as persistent object IDs.
 Each region's local node/link fragment is cached by its full authored value.
 `publishRegion` rebakes only changed geometry, while `setConnections` and
 `unloadRegion` reuse surviving fragments. All fragments are assembled and
-GraphSpace is recompiled for every published revision, so global IDs may move
-and old immutable graphs remain valid. `BakeReport::geometryRebakes` exposes
+GraphSpace is recompiled for every published revision. Unchanged resident region
+IDs survive other regions' edits; changed/unloaded regions and authored connection
+links may get new IDs. Old immutable graphs remain valid. `BakeReport::geometryRebakes` exposes
 the actual recalculation count; it is not a full graph compilation cost metric.
 
 Region publication checks increasing contentVersion. A same-version identical region is

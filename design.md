@@ -253,6 +253,12 @@ cell center must have a clear rectangular corridor footprint, and every adjacent
 have a clear swept rectangle through full agent height. The result is a deterministic
 directed GraphDefinition compiled by existing GraphSpace. Node/link IDs are generated in
 sorted region/grid order within each snapshot; do not save them as persistent object IDs.
+Each region's local node/link fragment is cached by its full authored value.
+`publishRegion` rebakes only changed geometry, while `setConnections` and
+`unloadRegion` reuse surviving fragments. All fragments are assembled and
+GraphSpace is recompiled for every published revision, so global IDs may move
+and old immutable graphs remain valid. `BakeReport::geometryRebakes` exposes
+the actual recalculation count; it is not a full graph compilation cost metric.
 
 Region publication checks increasing contentVersion. A same-version identical region is
 idempotent; changed content with the same/older version is stale. Rebuild happens in a

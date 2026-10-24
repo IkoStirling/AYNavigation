@@ -53,7 +53,8 @@ void bakeAndUpdate()
     first.blockers.push_back({{2.0, 0.0, 2.0}, {4.0, 2.0, 4.0}});
     auto compiled = bake.publishRegion(first);
     check(bool(compiled) && compiled.value != nullptr, "first bake");
-    check(bake.report().nodes > 0 && bake.report().blockedCells > 0,
+    check(bake.report().nodes > 0 && bake.report().blockedCells > 0
+          && bake.report().geometryRebakes == 1,
           "bake diagnostic counts");
     const Location start{1, {0.5, 0.0, 2.5}};
     const Location goal{1, {5.5, 0.0, 2.5}};
@@ -77,12 +78,16 @@ void bakeAndUpdate()
     auto second = room(2, 10.0, 16.0);
     auto two = bake.publishRegion(second);
     check(bool(two) && two.value != nullptr
-          && two.value->stamp().version > oldStamp.version, "second region revision");
+          && two.value->stamp().version > oldStamp.version
+          && bake.report().geometryRebakes == 1,
+          "second region revision reuses first geometry");
     const BakeConnection portal{1, 2, {5.5, 0.0, 0.5},
                                 {10.5, 0.0, 0.5}, 17, 88, 1};
     auto connected = bake.setConnections({portal});
     check(bool(connected) && connected.value != nullptr,
           "cross-region connection compiled");
+    check(bake.report().geometryRebakes == 0,
+          "connection-only revision reuses all region geometry");
     auto across = route(connected.value, {1, {5.5, 0.0, 0.5}},
                         {2, {10.5, 0.0, 0.5}}, {17});
     check(across.status == PlanStatus::Found, "route crosses connection");
@@ -92,13 +97,15 @@ void bakeAndUpdate()
     check(foundPortal, "route contains portal traversal step");
     auto unloaded = bake.unloadRegion(2);
     check(bool(unloaded) && unloaded.value != nullptr
-          && bake.report().disabledConnections == 1,
+          && bake.report().disabledConnections == 1
+          && bake.report().geometryRebakes == 0,
           "unload removes topology but retains dormant connection");
     check(!unloaded.value->contains({2, {10.5, 0.0, 0.5}}, {}),
           "unloaded region is not navigable");
     auto reloaded = bake.publishRegion(second);
     check(bool(reloaded) && reloaded.value != nullptr
-          && bake.report().disabledConnections == 0,
+          && bake.report().disabledConnections == 0
+          && bake.report().geometryRebakes == 1,
           "reload restores connection with new stamp");
     check(route(reloaded.value, {1, {5.5, 0.0, 0.5}},
                 {2, {10.5, 0.0, 0.5}}, {17}).status == PlanStatus::Found,
@@ -107,7 +114,9 @@ void bakeAndUpdate()
     first.contentVersion = 2;
     first.blockers = {{{2.0, 0.0, 0.0}, {4.0, 2.0, 6.0}}};
     auto blocked = bake.publishRegion(first);
-    check(bool(blocked) && blocked.value != nullptr, "obstacle revision published");
+    check(bool(blocked) && blocked.value != nullptr
+          && bake.report().geometryRebakes == 1,
+          "obstacle revision rebakes only changed region");
     check(route(blocked.value, start, goal).status == PlanStatus::Unreachable,
           "new static barrier invalidates old route");
     StationaryMotor motor;

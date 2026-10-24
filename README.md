@@ -31,6 +31,10 @@ previous graph. Unloading one region removes its nodes and disables its cross-re
 reloading the region restores links declared with `setConnections`. Each directed connection
 names a `TraversalKind` that the caller must register with Navigator and implement with the
 real connected-space movement authority.
+An updated region recalculates only its own walkable cells and local links;
+unchanged region fragments are shared across revisions. The complete graph is
+still recompiled for atomic publication. `BakeReport::geometryRebakes` reports
+how many region geometries were recalculated in the last publication.
 One region may contain one primary horizontal floor and up to 16 additional flat
 floors or planar ramps. Each surface has an independent grid; an authored directed
 same-region `BakeConnection` with a registered traversal kind joins selected levels.

@@ -65,6 +65,9 @@ struct BakeConfig {
 struct BakeReport {
     Stamp stamp;
     std::size_t regions = 0;
+    /// Number of region geometries recalculated for this publication. A
+    /// connection-only revision reuses all cached region fragments.
+    std::size_t geometryRebakes = 0;
     std::size_t nodes = 0;
     std::size_t links = 0;
     std::size_t blockedCells = 0;
@@ -72,7 +75,8 @@ struct BakeReport {
 };
 
 /// Bounded, deterministic 2.5D flat/ramp grid bake into the existing immutable
-/// GraphSpace. Changes publish a new revision atomically; failed bakes leave
+/// GraphSpace. Changed region geometry is rebaked locally, then the complete
+/// immutable graph is recompiled for one atomic revision. Failed bakes leave
 /// the previous graph and authoring inputs untouched. Not a NavMesh solver.
 class StaticBakeWorld {
 public:
@@ -85,12 +89,19 @@ public:
     [[nodiscard]] BakeReport report() const noexcept { return _report; }
 
 private:
+    struct RegionFragment {
+        std::size_t cells = 0, blockedCells = 0;
+        std::vector<Node> nodes;
+        std::vector<Link> links;
+    };
+    Result<RegionFragment> bakeRegion(const BakeRegion& region) const;
     Result<std::shared_ptr<const GraphSpace>> rebuild(
         std::map<RegionId, BakeRegion> regions,
         std::vector<BakeConnection> connections);
     std::uint64_t _spaceId;
     BakeConfig _config;
     std::map<RegionId, BakeRegion> _regions;
+    std::map<RegionId, std::shared_ptr<const RegionFragment>> _fragments;
     std::vector<BakeConnection> _connections;
     std::shared_ptr<const GraphSpace> _graph;
     BakeReport _report;

@@ -157,6 +157,98 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::setConnections(
     return rebuild(_regions, std::move(connections));
 }
 
+Result<StaticBakeWorld::RegionFragment> StaticBakeWorld::bakeRegion(
+    const BakeRegion& region) const
+{
+    RegionFragment fragment;
+    const auto maxCells = std::min<std::size_t>(_config.maxCells, 10000);
+    const auto maxLinks = std::min<std::size_t>(_config.maxLinks, 50000);
+    const auto surfaces = 1 + region.additionalFloors.size() + region.ramps.size();
+    auto floorAt = [&](std::size_t index) -> const BakeBox& {
+        if (index == 0) return region.floor;
+        if (index <= region.additionalFloors.size())
+            return region.additionalFloors[index - 1];
+        return region.ramps[index - 1 - region.additionalFloors.size()].footprint;
+    };
+    auto rampAt = [&](std::size_t index) -> const BakeRamp* {
+        if (index <= region.additionalFloors.size()) return nullptr;
+        return &region.ramps[index - 1 - region.additionalFloors.size()];
+    };
+    std::vector<RegionGrid> grids;
+    grids.reserve(surfaces);
+    NodeId nextNode = 1;
+    for (std::size_t surface = 0; surface < surfaces; ++surface) {
+        const auto& floor = floorAt(surface);
+        const auto* ramp = rampAt(surface);
+        const double dx = floor.maximum.x - floor.minimum.x;
+        const double dz = floor.maximum.z - floor.minimum.z;
+        if (!std::isfinite(dx) || !std::isfinite(dz)
+            || dx < _config.cellSize || dz < _config.cellSize)
+            return {Error::Invalid};
+        const double cellsX = std::floor(dx / _config.cellSize);
+        const double cellsZ = std::floor(dz / _config.cellSize);
+        if (!std::isfinite(cellsX) || !std::isfinite(cellsZ)
+            || cellsX > double(maxCells) || cellsZ > double(maxCells))
+            return {Error::Budget};
+        const auto nx = static_cast<std::size_t>(cellsX);
+        const auto nz = static_cast<std::size_t>(cellsZ);
+        if (!nx || !nz || nx > maxCells / nz
+            || nx * nz > maxCells - fragment.cells)
+            return {Error::Budget};
+        fragment.cells += nx * nz;
+        RegionGrid grid{nx, nz, std::vector<NodeId>(nx * nz, 0)};
+        for (std::size_t z = 0; z < nz; ++z) {
+            for (std::size_t x = 0; x < nx; ++x) {
+                const double worldX = floor.minimum.x + (double(x) + 0.5) * _config.cellSize;
+                const double worldZ = floor.minimum.z + (double(z) + 0.5) * _config.cellSize;
+                const Vec3 center{worldX, surfaceY(floor, ramp, worldX, worldZ), worldZ};
+                if (!clearCorridor(region, floor, center, center,
+                                   _config.corridorWidth, _config.agentHeight)) {
+                    ++fragment.blockedCells;
+                    continue;
+                }
+                grid.nodes[z * nx + x] = nextNode;
+                fragment.nodes.push_back({nextNode++, {region.id, center}});
+            }
+        }
+        grids.push_back(std::move(grid));
+    }
+    LinkId nextLink = 1;
+    for (std::size_t surface = 0; surface < surfaces; ++surface) {
+        const auto& floor = floorAt(surface);
+        const auto& grid = grids[surface];
+        for (std::size_t z = 0; z < grid.nz; ++z) {
+            for (std::size_t x = 0; x < grid.nx; ++x) {
+                const auto id = grid.nodes[z * grid.nx + x];
+                if (!id) continue;
+                for (const auto [nx, nz] : {
+                         std::pair{x + 1, z}, std::pair{x, z + 1}}) {
+                    if (nx >= grid.nx || nz >= grid.nz) continue;
+                    const auto neighbor = grid.nodes[nz * grid.nx + nx];
+                    if (!neighbor) continue;
+                    const auto a = fragment.nodes[id - 1].location.position;
+                    const auto b = fragment.nodes[neighbor - 1].location.position;
+                    const double horizontal = std::hypot(a.x - b.x, a.z - b.z);
+                    if (std::abs(a.y - b.y)
+                        > _config.maxRisePerHorizontal * horizontal + 1e-9)
+                        continue;
+                    if (!clearCorridor(region, floor, a, b,
+                                       _config.corridorWidth, _config.agentHeight))
+                        continue;
+                    if (fragment.links.size() + 2 > maxLinks) return {Error::Budget};
+                    const auto linkCost = static_cast<std::uint64_t>(
+                        std::ceil(length(b - a) * 1000.0));
+                    fragment.links.push_back({nextLink++, id, neighbor,
+                        _config.corridorWidth, _config.agentHeight, linkCost});
+                    fragment.links.push_back({nextLink++, neighbor, id,
+                        _config.corridorWidth, _config.agentHeight, linkCost});
+                }
+            }
+        }
+    }
+    return {Error::None, std::move(fragment)};
+}
+
 Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     std::map<RegionId, BakeRegion> regions,
     std::vector<BakeConnection> connections)
@@ -180,6 +272,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     report.regions = regions.size();
     if (regions.empty()) {
         _regions = std::move(regions);
+        _fragments.clear();
         _connections = std::move(connections);
         _graph.reset();
         _report = report;
@@ -187,105 +280,48 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     }
     GraphDefinition graph;
     graph.stamp = report.stamp;
-    std::map<std::pair<RegionId, std::size_t>, RegionGrid> grids;
+    std::map<RegionId, std::shared_ptr<const RegionFragment>> fragments;
+    std::map<RegionId, NodeId> firstNode;
     NodeId nextNode = 1;
     LinkId nextLink = 1;
     std::size_t cellCount = 0;
     const auto maxCells = std::min<std::size_t>(_config.maxCells, 10000);
+    const auto maxLinks = std::min<std::size_t>(_config.maxLinks, 50000);
     const auto cost = static_cast<std::uint64_t>(std::ceil(_config.cellSize * 1000.0));
-    const auto surfaceCount = [](const BakeRegion& region) {
-        return 1 + region.additionalFloors.size() + region.ramps.size();
-    };
-    const auto floorAt = [](const BakeRegion& region, std::size_t index)
-        -> const BakeBox& {
-        if (index == 0) return region.floor;
-        if (index <= region.additionalFloors.size())
-            return region.additionalFloors[index - 1];
-        return region.ramps[index - 1 - region.additionalFloors.size()].footprint;
-    };
-    const auto rampAt = [](const BakeRegion& region, std::size_t index)
-        -> const BakeRamp* {
-        if (index <= region.additionalFloors.size()) return nullptr;
-        return &region.ramps[index - 1 - region.additionalFloors.size()];
-    };
     for (const auto& [regionId, region] : regions) {
-      for (std::size_t floorIndex = 0; floorIndex < surfaceCount(region); ++floorIndex) {
-        const auto& floor = floorAt(region, floorIndex);
-        const auto* ramp = rampAt(region, floorIndex);
-        const double dx = floor.maximum.x - floor.minimum.x;
-        const double dz = floor.maximum.z - floor.minimum.z;
-        if (!std::isfinite(dx) || !std::isfinite(dz)
-            || dx < _config.cellSize || dz < _config.cellSize)
-            return {Error::Invalid};
-        const double cellsX = std::floor(dx / _config.cellSize);
-        const double cellsZ = std::floor(dz / _config.cellSize);
-        if (!std::isfinite(cellsX) || !std::isfinite(cellsZ)
-            || cellsX > double(maxCells)
-            || cellsZ > double(maxCells)) return {Error::Budget};
-        const auto nx = static_cast<std::size_t>(cellsX);
-        const auto nz = static_cast<std::size_t>(cellsZ);
-        if (!nx || !nz || nx > maxCells / nz
-            || nx * nz > maxCells - cellCount)
-            return {Error::Budget};
-        cellCount += nx * nz;
-        RegionGrid grid{nx, nz, std::vector<NodeId>(nx * nz, 0)};
-        for (std::size_t z = 0; z < nz; ++z) {
-            for (std::size_t x = 0; x < nx; ++x) {
-                const Vec3 center{
-                    floor.minimum.x + (double(x) + 0.5) * _config.cellSize,
-                    surfaceY(floor, ramp,
-                        floor.minimum.x + (double(x) + 0.5) * _config.cellSize,
-                        floor.minimum.z + (double(z) + 0.5) * _config.cellSize),
-                    floor.minimum.z + (double(z) + 0.5) * _config.cellSize};
-                if (!clearCorridor(region, floor, center, center,
-                                   _config.corridorWidth, _config.agentHeight)) {
-                    ++report.blockedCells;
-                    continue;
-                }
-                grid.nodes[z * nx + x] = nextNode;
-                graph.nodes.push_back({nextNode++, {regionId, center}});
-            }
+        const auto old = _regions.find(regionId);
+        const auto cached = _fragments.find(regionId);
+        if (old != _regions.end() && cached != _fragments.end()
+            && old->second == region) {
+            fragments.emplace(regionId, cached->second);
+        } else {
+            auto baked = bakeRegion(region);
+            if (!baked) return {baked.error};
+            fragments.emplace(regionId,
+                std::make_shared<const RegionFragment>(std::move(baked.value)));
+            ++report.geometryRebakes;
         }
-        grids.emplace(std::pair{regionId, floorIndex}, std::move(grid));
-      }
+        const auto& fragment = *fragments.at(regionId);
+        if (fragment.cells > maxCells - cellCount) return {Error::Budget};
+        cellCount += fragment.cells;
+        report.blockedCells += fragment.blockedCells;
+        firstNode.emplace(regionId, nextNode);
+        for (const auto& local : fragment.nodes)
+            graph.nodes.push_back({nextNode++, local.location});
     }
     if (graph.nodes.empty()) return {Error::NoPath};
-    for (const auto& [regionId, region] : regions) {
-      for (std::size_t floorIndex = 0; floorIndex < surfaceCount(region); ++floorIndex) {
-        const auto& floor = floorAt(region, floorIndex);
-        const auto& grid = grids.at({regionId, floorIndex});
-        for (std::size_t z = 0; z < grid.nz; ++z) {
-            for (std::size_t x = 0; x < grid.nx; ++x) {
-                const auto id = grid.nodes[z * grid.nx + x];
-                if (!id) continue;
-                for (const auto [nx, nz] : {
-                         std::pair{x + 1, z}, std::pair{x, z + 1}}) {
-                    if (nx >= grid.nx || nz >= grid.nz) continue;
-                    const auto neighbor = grid.nodes[nz * grid.nx + nx];
-                    if (!neighbor) continue;
-                    const auto a = graph.nodes[id - 1].location.position;
-                    const auto b = graph.nodes[neighbor - 1].location.position;
-                    const double horizontal = std::hypot(a.x - b.x, a.z - b.z);
-                    if (std::abs(a.y - b.y)
-                        > _config.maxRisePerHorizontal * horizontal + 1e-9)
-                        continue;
-                    if (!clearCorridor(region, floor, a, b,
-                                       _config.corridorWidth, _config.agentHeight))
-                        continue;
-                    if (graph.links.size() + 2 > std::min<std::size_t>(
-                            _config.maxLinks, 50000)) return {Error::Budget};
-                    const auto linkCost = static_cast<std::uint64_t>(
-                        std::ceil(length(b - a) * 1000.0));
-                    graph.links.push_back({nextLink++, id, neighbor,
-                                           _config.corridorWidth, _config.agentHeight,
-                                           linkCost});
-                    graph.links.push_back({nextLink++, neighbor, id,
-                                           _config.corridorWidth, _config.agentHeight,
-                                           linkCost});
-                }
-            }
+    for (const auto& [regionId, fragmentPtr] : fragments) {
+        const auto& fragment = *fragmentPtr;
+        const auto offset = firstNode.at(regionId) - 1;
+        if (fragment.links.size() > maxLinks - graph.links.size())
+            return {Error::Budget};
+        for (const auto& local : fragment.links) {
+            auto link = local;
+            link.id = nextLink++;
+            link.from += offset;
+            link.to += offset;
+            graph.links.push_back(link);
         }
-      }
     }
     auto nearest = [&](RegionId regionId, Vec3 target) -> NodeId {
         NodeId bestId = 0;
@@ -308,8 +344,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
         const auto from = nearest(connection.from, connection.departure);
         const auto to = nearest(connection.to, connection.arrival);
         if (!from || !to || from == to) return {Error::NoPath};
-        if (graph.links.size() + 1 > std::min<std::size_t>(
-                _config.maxLinks, 50000)) return {Error::Budget};
+        if (graph.links.size() + 1 > maxLinks) return {Error::Budget};
         graph.links.push_back({nextLink++, from, to, _config.corridorWidth,
                                _config.agentHeight, cost, 0, connection.resource,
                                connection.capacity, connection.traversal});
@@ -319,6 +354,7 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     report.nodes = compiled.value->definition().nodes.size();
     report.links = compiled.value->definition().links.size();
     _regions = std::move(regions);
+    _fragments = std::move(fragments);
     _connections = std::move(connections);
     _graph = compiled.value;
     _report = report;

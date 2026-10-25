@@ -59,7 +59,7 @@ that can follow the slope because Planar steering rejects vertical velocity.
 stimuli, and a Host-owned visibility query. It returns a generic Chase, Search or Return
 goal; a game or AYBehavior owner chooses command priority and interruption. Sight requires
 range, cone and successful occlusion query. Sound has a bounded audible radius and event
-identity. Old memories expire by fixed tick; `forgetRegion` removes unloaded-region targets.
+identity. Old memories expire by fixed tick; call `forgetRegion` after a confirmed unload to remove that region's targets and sound receipts.
 When a stable target is permanently removed inside a resident region, call
 `forgetTarget` and cancel any active chase/search command for it; this preserves
 other targets and heard-event receipts, so old sound IDs cannot revive it.

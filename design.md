@@ -316,8 +316,8 @@ deduplicated until expiry or region unload.
 Heard locations and last-seen feet become
 bounded, expiring records; visual observations win over sound in the current tick. The
 returned Chase/Search/Return goal is a suggestion for an AYBehavior/NavigationExecutor
-command, not authority over game permissions or interruption. `forgetRegion` removes
-unloaded-region records and their sound-ID receipts before transient Entity teardown;
+command, not authority over game permissions or interruption. After confirmed unload, `forgetRegion` removes
+unloaded-region records and their sound-ID receipts without querying transient Entities;
 a reloaded region may reuse its sound facts immediately. No Entity or Physics handles are
 retained across frames. The standalone sample uses a simulated motor and visibility query;
 live Jolt/audio/Scene lifecycle wiring remains Host work.

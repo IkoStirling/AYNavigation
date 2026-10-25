@@ -93,8 +93,9 @@ public:
         std::span<const SoundStimulus> sounds,
         Location home, VisibilityQuery& visibility,
         SoundTravelQuery* soundTravel = nullptr);
-    /// Call from a region-unload boundary before its transient entities die.
-    /// Clears both remembered targets and sound deduplication for that region.
+    /// Call after a successful region unload, or when retiring all stimuli in
+    /// that region. Clears remembered targets and sound deduplication without
+    /// retaining or querying transient World entities.
     void forgetRegion(RegionId region) noexcept;
     /// Retire a destroyed or otherwise invalid stable target within a live region.
     /// Sound event receipts remain, so an already-heard event cannot recreate it;

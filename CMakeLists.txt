@@ -35,7 +35,8 @@ if(AY_NAVIGATION_BUILD_WORLD_ADAPTER)
     if(NOT TARGET AYEntityCore OR NOT TARGET AYMath)
         message(FATAL_ERROR "Navigation World adapter requires AYEntityCore and AYMath")
     endif()
-    add_library(AYNavigationWorldAdapter STATIC src/WorldBake.cpp src/PhysicsVisibility.cpp)
+    add_library(AYNavigationWorldAdapter STATIC src/WorldBake.cpp src/PhysicsVisibility.cpp
+        src/ConnectedSpaceSound.cpp)
     add_library(AYNavigation::WorldAdapter ALIAS AYNavigationWorldAdapter)
     target_link_libraries(AYNavigationWorldAdapter PUBLIC AYNavigationCore AYEntityCore AYMath)
     target_include_directories(AYNavigationWorldAdapter PUBLIC

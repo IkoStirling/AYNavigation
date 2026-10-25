@@ -10,7 +10,8 @@ Result<PursuitDecision> PerceptionMemory::update(
     std::uint64_t tick, Location eye, Vec3 forward,
     std::span<const SightTarget> targets,
     std::span<const SoundStimulus> sounds,
-    Location home, VisibilityQuery& visibility)
+    Location home, VisibilityQuery& visibility,
+    SoundTravelQuery* soundTravel)
 {
     if (!tick || tick <= _lastTick || !eye.region || !home.region
         || !finite(eye.position) || !finite(home.position)
@@ -58,9 +59,19 @@ Result<PursuitDecision> PerceptionMemory::update(
 
     for (const auto& sound : sounds) {
         if (stagedSounds.contains(sound.eventId)) continue;
-        if (sound.location.region != eye.region
-            || length(sound.location.position - eye.position)
-                   > sound.audibleRadius) continue;
+        double distance = 0.0;
+        if (soundTravel) {
+            const auto path = soundTravel->distance(eye, sound);
+            if (!path) return {path.error};
+            if (!path.value) continue;
+            distance = *path.value;
+            if (!std::isfinite(distance) || distance < 0.0)
+                return {Error::QueryFailed};
+        } else {
+            if (sound.location.region != eye.region) continue;
+            distance = length(sound.location.position - eye.position);
+        }
+        if (distance > sound.audibleRadius) continue;
         stagedSounds.emplace(sound.eventId,
                              SeenSound{sound.location.region, tick});
         stagedMemory[sound.sourcePersistentId] = {sound.location, tick};

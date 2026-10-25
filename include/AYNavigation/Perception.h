@@ -3,6 +3,7 @@
 #include <AYNavigation/Navigation.h>
 
 #include <map>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -34,6 +35,16 @@ public:
     virtual Result<bool> clear(Location eye, const SightTarget& target) = 0;
 };
 
+/// Optional acoustic route distance. No route is std::nullopt; query failure
+/// aborts the perception update without publishing memory or sound receipts.
+/// The default without this service hears only within the listener's region.
+class SoundTravelQuery {
+public:
+    virtual ~SoundTravelQuery() = default;
+    virtual Result<std::optional<double>> distance(
+        Location listener, const SoundStimulus& sound) = 0;
+};
+
 struct PerceptionConfig {
     double visualRange = 15.0;
     double halfAngleRadians = 1.0;
@@ -57,7 +68,8 @@ public:
     Result<PursuitDecision> update(std::uint64_t tick, Location eye, Vec3 forward,
         std::span<const SightTarget> targets,
         std::span<const SoundStimulus> sounds,
-        Location home, VisibilityQuery& visibility);
+        Location home, VisibilityQuery& visibility,
+        SoundTravelQuery* soundTravel = nullptr);
     /// Call from a region-unload boundary before its transient entities die.
     /// Clears both remembered targets and sound deduplication for that region.
     void forgetRegion(RegionId region) noexcept;

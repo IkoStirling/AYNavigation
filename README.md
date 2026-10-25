@@ -60,6 +60,18 @@ a still-present event can be heard once after the listener approaches it.
 It also clears sound-event deduplication owned by that region, so a reloaded
 region can deliver its current sound facts without waiting for old IDs to age out.
 Failed visibility queries leave memory unchanged. No Entity or Physics handles are retained.
+The optional `SoundTravelQuery` replaces the same-region Euclidean test with a
+Host-supplied nonnegative route distance. A missing route remains unheard; a
+failed query aborts the whole update without consuming any sound event.
+`AYNavigation::WorldAdapter` provides `ConnectedSpaceSoundTravel` over the live
+`ConnectedSpaces` topology. It chooses the shortest directed route through
+enabled portal centers, including multi-hop paths and same-region shortcuts.
+Call it at a quiescent topology boundary; supply a `RegionAvailable` predicate
+(for example, `WorldRegionStream::isLoaded`) to exclude unloaded intermediate
+regions. Its portal budget defaults to 128 and exhaustion is a query error.
+This is geometric range approximation: opening area, walls, diffraction and
+attenuation are not modeled. Sound event production and NPC task policy remain
+with the Host/game.
 
 Run `AYNavigationSpatialAwarenessExample` for a small baked 3D room where one simulated NPC
 follows chase, search, heard-location and home goals through the existing Navigator.

@@ -1,6 +1,7 @@
 #include "Test.h"
 
 #include <AYNavigation/PhysicsVisibility.h>
+#include <AYNavigation/ConnectedSpaceSound.h>
 #include <AYNavigation/WorldBake.h>
 #include <AYEntity.h>
 #include <AYEntity/World.h>
@@ -11,6 +12,7 @@
 #include <AYEntity/components/TransformComponent.h>
 #include <array>
 #include <cmath>
+#include <limits>
 
 using namespace ayt::navigation;
 
@@ -201,6 +203,105 @@ void physics_ray_uses_world_identity_and_region_mask()
     fixture.world.destroyEntity(target);
     CHECK(visibility.clear(eye, sight).error == Error::QueryFailed);
 }
+
+void connected_space_sound_follows_directed_resident_portals()
+{
+    Fixture fixture;
+    auto& spaces = fixture.world.connectedSpaces();
+    CHECK(spaces.addRegion(2));
+    CHECK(spaces.addRegion(3));
+    ayt::entity::SpacePortal first;
+    first.id = 10;
+    first.source = 1;
+    first.destination = 2;
+    first.entrance.position = {1, 0, 0};
+    first.exit.position = {100, 0, 0};
+    CHECK(spaces.setPortal(first));
+    ayt::entity::SpacePortal second = first;
+    second.id = 11;
+    second.source = 2;
+    second.destination = 3;
+    second.entrance.position = {102, 0, 0};
+    second.exit.position = {0, 0, 0};
+    CHECK(spaces.setPortal(second));
+    ConnectedSpaceSoundTravel travel(spaces);
+    const Location ear{1, {0, 0, 0}};
+    const SoundStimulus sound{101, "visitor", {2, {101, 0, 0}}, 2.5};
+    const auto path = travel.distance(ear, sound);
+    CHECK(path && path.value && std::abs(*path.value - 2.0) < 1e-9);
+    const auto chain = travel.distance(ear,
+        SoundStimulus{102, "far-visitor", {3, {1, 0, 0}}, 4.5});
+    CHECK(chain && chain.value && std::abs(*chain.value - 4.0) < 1e-9);
+    const auto reverse = travel.distance({2, {101, 0, 0}},
+        SoundStimulus{103, "reverse", ear, 100.0});
+    CHECK(reverse && !reverse.value);
+    ayt::entity::SpacePortal returnPortal = first;
+    returnPortal.id = 12;
+    returnPortal.source = 2;
+    returnPortal.destination = 1;
+    returnPortal.entrance.position = {101, 0, 0};
+    returnPortal.exit.position = {20, 0, 0};
+    CHECK(spaces.setPortal(returnPortal));
+    const auto sameRegionShortcut = travel.distance(ear,
+        SoundStimulus{105, "shortcut", {1, {21, 0, 0}}, 3.0});
+    CHECK(sameRegionShortcut && sameRegionShortcut.value
+        && std::abs(*sameRegionShortcut.value - 3.0) < 1e-9);
+    CHECK(spaces.removePortal(returnPortal.id));
+
+    struct Clear final : VisibilityQuery {
+        Result<bool> clear(Location, const SightTarget&) override
+        { return {Error::None, true}; }
+    } clear;
+    PerceptionMemory memory({10.0, 0.8, 3, 4});
+    auto unheard = memory.update(1, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear);
+    CHECK(unheard && unheard.value.mode == PursuitMode::Return);
+    auto heard = memory.update(2, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &travel);
+    CHECK(heard && heard.value.mode == PursuitMode::Search
+        && heard.value.goal == sound.location);
+    memory.forgetRegion(2);
+    CHECK(memory.rememberedCount() == 0);
+    auto replayed = memory.update(3, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &travel);
+    CHECK(replayed && replayed.value.mode == PursuitMode::Search);
+
+    ConnectedSpaceSoundTravel budgeted(spaces, 1);
+    PerceptionMemory atomicMemory;
+    CHECK(atomicMemory.update(1, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &budgeted).error == Error::Budget);
+    CHECK(atomicMemory.rememberedCount() == 0);
+    CHECK(atomicMemory.update(1, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &travel));
+
+    struct InvalidSecondRoute final : SoundTravelQuery {
+        Result<std::optional<double>> distance(Location,
+            const SoundStimulus& event) override
+        {
+            return {Error::None, event.eventId == 106
+                ? std::optional<double>{std::numeric_limits<double>::quiet_NaN()}
+                : std::optional<double>{0.0}};
+        }
+    } invalidRoute;
+    PerceptionMemory rollbackMemory;
+    const std::array pair{sound,
+        SoundStimulus{106, "invalid-route", {2, {100, 0, 0}}, 3.0}};
+    CHECK(rollbackMemory.update(1, ear, {1, 0, 0}, {},
+        pair, ear, clear, &invalidRoute).error == Error::QueryFailed);
+    CHECK(rollbackMemory.rememberedCount() == 0);
+    CHECK(rollbackMemory.update(1, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &travel));
+
+    ConnectedSpaceSoundTravel resident(spaces, 128,
+        [](RegionId region) { return region != 2; });
+    const auto unavailable = resident.distance(ear,
+        SoundStimulus{104, "far-visitor", {3, {1, 0, 0}}, 100.0});
+    CHECK(unavailable && !unavailable.value);
+    first.enabled = false;
+    CHECK(spaces.setPortal(first));
+    const auto disabled = travel.distance(ear, sound);
+    CHECK(disabled && !disabled.value);
+}
 } // namespace
 
 TEST_MAIN(
@@ -209,4 +310,5 @@ TEST_MAIN(
     RUN(world_geometry_and_unload);
     RUN(observed_static_geometry_refreshes_without_manual_version);
     RUN(physics_ray_uses_world_identity_and_region_mask);
+    RUN(connected_space_sound_follows_directed_resident_portals);
 )

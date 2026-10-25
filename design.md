@@ -268,11 +268,15 @@ temporary graph, then atomically replaces the current immutable snapshot with an
 Stamp version. Failed validation, blocked portal attachment and budget failure leave the
 old graph and region input unchanged. `regionContentVersion` observes only the
 committed input token; it returns empty after unload and does not rebuild.
-`Navigator::publish` invalidates ordinary routes and
-replans from sampled actual motion. A started special traversal keeps its frozen step and
+`Navigator::publish` invalidates ordinary routes and replans from sampled actual motion.
+`navigationSpace()` supplies the immutable graph or a revisioned empty authority when no
+regions remain. The empty authority denies all locations and steps; it starts at revision 1,
+and unloading the last region advances it, allowing a running Navigator to reject stale routes.
+A started special traversal keeps its frozen step and
 must be resolved by its authoritative movement adapter. Unloading a region removes its
 nodes; connections referring to it become dormant and reactivate on reload. If the final
-region unloads, `current()` becomes null and the Host must detach/cancel its agents.
+region unloads, `current()` becomes null; `navigationSpace()` still publishes a denying
+revision. The Host cancels gameplay work or detaches agents according to its own lifecycle.
 The optional `refreshRegion` compares observed floor, blocker and ramp geometry
 with the last accepted region, ignoring the caller's contentVersion. Equal
 geometry returns the current graph without a new stamp. Changed geometry uses

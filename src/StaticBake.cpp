@@ -7,6 +7,18 @@
 
 namespace ayt::navigation {
 namespace {
+class EmptyBakeSpace final : public Space {
+public:
+    explicit EmptyBakeSpace(Stamp revision) : _revision(revision) {}
+    Stamp stamp() const noexcept override { return _revision; }
+    bool contains(Location, const Profile&) const override { return false; }
+    bool accepts(const Step&, const Profile&) const override { return false; }
+    bool permits(const Step&, Location, Location,
+                 const Profile&) const override { return false; }
+private:
+    Stamp _revision;
+};
+
 bool validBox(const BakeBox& box, bool floor)
 {
     return finite(box.minimum) && finite(box.maximum)
@@ -88,6 +100,10 @@ StaticBakeWorld::StaticBakeWorld(std::uint64_t spaceId, BakeConfig config)
     : _spaceId(spaceId), _config(config)
 {
     _report.stamp.space = spaceId;
+    if (spaceId) {
+        _report.stamp.version = 1;
+        _emptySpace = std::make_shared<EmptyBakeSpace>(_report.stamp);
+    }
 }
 
 Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::publishRegion(
@@ -290,12 +306,14 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::rebuild(
     report.stamp = {_spaceId, _report.stamp.version + 1};
     report.regions = regions.size();
     if (regions.empty()) {
+        auto empty = std::make_shared<EmptyBakeSpace>(report.stamp);
         _regions = std::move(regions);
         _fragments.clear();
         _nodeIds.clear();
         _linkIds.clear();
         _connections = std::move(connections);
         _graph.reset();
+        _emptySpace = std::move(empty);
         _report = report;
         return {Error::None, _graph};
     }

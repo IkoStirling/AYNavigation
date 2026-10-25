@@ -93,6 +93,13 @@ public:
     Result<std::shared_ptr<const GraphSpace>> setConnections(
         std::vector<BakeConnection> connections);
     [[nodiscard]] std::shared_ptr<const GraphSpace> current() const noexcept { return _graph; }
+    /// Revisioned navigation authority, including an empty authority before
+    /// the first region and after the last unload. Publish this to a running
+    /// Navigator so routes cannot keep using an unloaded region. current()
+    /// remains null when no graph geometry exists.
+    [[nodiscard]] std::shared_ptr<const Space> navigationSpace() const noexcept {
+        return _graph ? std::static_pointer_cast<const Space>(_graph) : _emptySpace;
+    }
     [[nodiscard]] BakeReport report() const noexcept { return _report; }
     /// Inspect the committed content token for one region. A missing region
     /// has no navigation publication, even if other regions remain live.
@@ -121,6 +128,7 @@ private:
     std::map<RegionId, std::vector<LinkId>> _linkIds;
     std::vector<BakeConnection> _connections;
     std::shared_ptr<const GraphSpace> _graph;
+    std::shared_ptr<const Space> _emptySpace;
     BakeReport _report;
 };
 

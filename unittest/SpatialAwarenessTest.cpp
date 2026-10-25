@@ -50,6 +50,10 @@ struct NoObstacles final : ObstacleSource {
 void bakeAndUpdate()
 {
     StaticBakeWorld bake(42);
+    const auto emptyAtStart = bake.navigationSpace();
+    check(emptyAtStart && emptyAtStart->stamp().version == 1
+          && !emptyAtStart->contains({1, {0.5, 0.0, 0.5}}, {}),
+          "empty bake has a revisioned denying navigation authority");
     auto first = room(1, 0.0, 6.0);
     first.blockers.push_back({{2.0, 0.0, 2.0}, {4.0, 2.0, 4.0}});
     auto compiled = bake.publishRegion(first);
@@ -170,6 +174,16 @@ void bakeAndUpdate()
         }
     }
     check(failedAfterReplan, "running route invalidated by new static barrier");
+    check(bake.unloadRegion(1) && bake.unloadRegion(2),
+          "remove final static regions");
+    const auto emptyAfterUnload = bake.navigationSpace();
+    check(!bake.current() && emptyAfterUnload
+          && emptyAfterUnload->stamp().version > blocked.value->stamp().version
+          && !emptyAfterUnload->contains(start, profile),
+          "last unload retains a newer denying authority");
+    check(navigator.publish(emptyAfterUnload) == Error::None
+          && !navigator.canBegin(1, goal),
+          "live navigator rejects new travel through unloaded content");
 }
 
 struct Visibility final : VisibilityQuery {

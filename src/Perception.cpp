@@ -158,6 +158,11 @@ void PerceptionMemory::forgetRegion(RegionId region) noexcept
     }
 }
 
+bool PerceptionMemory::forgetTarget(const std::string& persistentId) noexcept
+{
+    return _memory.erase(persistentId) != 0;
+}
+
 PerceptionMemorySnapshot PerceptionMemory::snapshot() const
 {
     PerceptionMemorySnapshot result;

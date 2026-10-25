@@ -96,6 +96,10 @@ public:
     /// Call from a region-unload boundary before its transient entities die.
     /// Clears both remembered targets and sound deduplication for that region.
     void forgetRegion(RegionId region) noexcept;
+    /// Retire a destroyed or otherwise invalid stable target within a live region.
+    /// Sound event receipts remain, so an already-heard event cannot recreate it;
+    /// the Host must also stop supplying new stimuli and cancel any active task.
+    [[nodiscard]] bool forgetTarget(const std::string& persistentId) noexcept;
     [[nodiscard]] std::size_t rememberedCount() const noexcept { return _memory.size(); }
     /// Copy stable IDs, positions and sound receipts; no live handles are retained.
     [[nodiscard]] PerceptionMemorySnapshot snapshot() const;

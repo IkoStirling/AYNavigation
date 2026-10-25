@@ -337,6 +337,43 @@ void planarRampRespectsGradeAndAtomicRevision()
           {24, 25}, Steering::Spatial).status == PlanStatus::Unreachable,
           "ordinary links reject an excessive grade");
 }
+void retiredTargetDoesNotReplayOldSound()
+{
+    PerceptionMemory memory({10.0, 0.8, 10, 4});
+    Visibility visibility;
+    const Location eye{1, {0.5, 1.7, 0.5}};
+    const Location home{1, {0.5, 0.0, 0.5}};
+    const std::array targets{
+        SightTarget{"retired", {1, {4.5, 1.7, 0.5}}},
+        SightTarget{"survivor", {1, {5.5, 1.7, 0.5}}},
+    };
+    const std::array sound{SoundStimulus{300, "retired",
+        {1, {3.5, 1.7, 0.5}}, 8.0}};
+    check(bool(memory.update(1, eye, {1, 0, 0}, targets, {}, home, visibility)),
+          "both targets seen before retirement");
+    check(bool(memory.update(2, eye, {1, 0, 0}, {}, sound, home, visibility)),
+          "sound receipt exists before retirement");
+    check(memory.forgetTarget("retired") && !memory.forgetTarget("retired"),
+          "retirement reports whether the target was remembered");
+    const auto afterRetirement = memory.snapshot();
+    check(afterRetirement.targets.size() == 1
+          && afterRetirement.targets.front().persistentId == "survivor"
+          && afterRetirement.heardSounds.size() == 1,
+          "retirement leaves other targets and heard sound receipt intact");
+    auto movedSound = sound;
+    movedSound.front().location.position.x = 2.5;
+    const auto next = memory.update(3, eye, {1, 0, 0}, {}, movedSound,
+                                    home, visibility);
+    check(bool(next) && next.value.mode == PursuitMode::Search
+          && next.value.targetPersistentId == "survivor",
+          "old heard event does not recreate a retired target");
+    check(memory.forgetTarget("survivor"), "remaining target can retire");
+    const auto empty = memory.update(4, eye, {1, 0, 0}, {}, movedSound,
+                                     home, visibility);
+    check(bool(empty) && empty.value.mode == PursuitMode::Return,
+          "retired targets return to home without replaying sound");
+}
+
 void perceptionSnapshotRoundTrip()
 {
     const PerceptionConfig config{10.0, 0.8, 5, 4};
@@ -398,6 +435,7 @@ int main()
     try {
         bakeAndUpdate();
         visualAudioMemory();
+        retiredTargetDoesNotReplayOldSound();
         perceptionSnapshotRoundTrip();
         stackedFloorsNeedExplicitTraversal();
         planarRampRespectsGradeAndAtomicRevision();

@@ -315,6 +315,10 @@ unloaded-region records and their sound-ID receipts before transient Entity tear
 a reloaded region may reuse its sound facts immediately. No Entity or Physics handles are
 retained across frames. The standalone sample uses a simulated motor and visibility query;
 live Jolt/audio/Scene lifecycle wiring remains Host work.
+For a permanently retired target in a still-loaded region, `forgetTarget` removes
+only that stable ID's remembered location. Heard-event receipts remain to prevent
+redelivery of an old sound from recreating the target; the Host stops new stimuli
+and cancels any already-issued chase/search task separately.
 `PerceptionMemorySnapshot` is an owned schema-1 save boundary for one NPC. It records
 the configured limits, last committed tick, target locations/observation ticks and
 heard sound IDs/regions/ticks. Ordered maps make emitted records deterministic.

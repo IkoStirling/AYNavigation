@@ -3,6 +3,7 @@
 #include <AYNavigation/Graph.h>
 
 #include <map>
+#include <optional>
 
 namespace ayt::navigation {
 
@@ -93,6 +94,14 @@ public:
         std::vector<BakeConnection> connections);
     [[nodiscard]] std::shared_ptr<const GraphSpace> current() const noexcept { return _graph; }
     [[nodiscard]] BakeReport report() const noexcept { return _report; }
+    /// Inspect the committed content token for one region. A missing region
+    /// has no navigation publication, even if other regions remain live.
+    [[nodiscard]] std::optional<std::uint64_t> regionContentVersion(
+        RegionId id) const noexcept {
+        const auto found = _regions.find(id);
+        if (found == _regions.end()) return std::nullopt;
+        return found->second.contentVersion;
+    }
 
 private:
     struct RegionFragment {

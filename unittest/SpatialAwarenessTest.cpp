@@ -54,6 +54,9 @@ void bakeAndUpdate()
     first.blockers.push_back({{2.0, 0.0, 2.0}, {4.0, 2.0, 4.0}});
     auto compiled = bake.publishRegion(first);
     check(bool(compiled) && compiled.value != nullptr, "first bake");
+    check(bake.regionContentVersion(1) == first.contentVersion
+          && !bake.regionContentVersion(2),
+          "committed region token is readable without changing graph");
     const auto firstNodeId = compiled.value->definition().nodes.front().id;
     const auto firstLink = compiled.value->definition().links.front();
     check(bake.report().nodes > 0 && bake.report().blockedCells > 0
@@ -109,6 +112,9 @@ void bakeAndUpdate()
         foundPortal |= step.traversal == 17;
     check(foundPortal, "route contains portal traversal step");
     auto unloaded = bake.unloadRegion(2);
+    check(!bake.regionContentVersion(2)
+          && bake.regionContentVersion(1) == first.contentVersion,
+          "unload clears only the removed region token");
     check(bool(unloaded) && unloaded.value != nullptr
           && bake.report().disabledConnections == 1
           && bake.report().geometryRebakes == 0,

@@ -266,7 +266,9 @@ Region publication checks increasing contentVersion. A same-version identical re
 idempotent; changed content with the same/older version is stale. Rebuild happens in a
 temporary graph, then atomically replaces the current immutable snapshot with an increasing
 Stamp version. Failed validation, blocked portal attachment and budget failure leave the
-old graph and region input unchanged. `Navigator::publish` invalidates ordinary routes and
+old graph and region input unchanged. `regionContentVersion` observes only the
+committed input token; it returns empty after unload and does not rebuild.
+`Navigator::publish` invalidates ordinary routes and
 replans from sampled actual motion. A started special traversal keeps its frozen step and
 must be resolved by its authoritative movement adapter. Unloading a region removes its
 nodes; connections referring to it become dormant and reactivate on reload. If the final

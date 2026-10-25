@@ -28,6 +28,8 @@ boxes into an immutable `GraphSpace` revision. The caller extracts these shapes 
 content, supplies persistent region IDs and increasing content versions, and publishes the
 new graph to `Navigator::publish` at a quiescent frame boundary. A failed bake retains the
 previous graph. Unloading one region removes its nodes and disables its cross-region links;
+`regionContentVersion(region)` reads the published region token and returns
+empty after unload, so a stream integration can reject an already-owned bake.
 reloading the region restores links declared with `setConnections`. Each directed connection
 names a `TraversalKind` that the caller must register with Navigator and implement with the
 real connected-space movement authority.

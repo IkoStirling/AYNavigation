@@ -357,6 +357,66 @@ void planarRampRespectsGradeAndAtomicRevision()
           {24, 25}, Steering::Spatial).status == PlanStatus::Unreachable,
           "ordinary links reject an excessive grade");
 }
+
+void nonplanarHeightfieldBakesAndRejectsHiddenCliffs()
+{
+    auto region = room(1, 0.0, 4.0);
+    region.floor.minimum.y = 0.0;
+    region.floor.maximum.y = 2.0;
+    region.floor.maximum.z = 1.0;
+    region.primaryHeightfield = BakeHeightfield{5, 2,
+        {0.0, 0.5, 1.0, 0.5, 0.0,
+         0.0, 0.5, 1.0, 0.5, 0.0}};
+    StaticBakeWorld bake(94);
+    auto graph = bake.publishRegion(region);
+    check(bool(graph) && graph.value->definition().nodes.size() == 4
+          && graph.value->definition().nodes[1].location.position.y > 0.0,
+          "nonplanar samples set primary floor node heights");
+    const Location start{1, {0.5, 0.25, 0.5}};
+    const Location goal{1, {3.5, 0.25, 0.5}};
+    check(route(graph.value, start, goal, {}, Steering::Spatial).status
+          == PlanStatus::Found,
+          "spatial route crosses a gentle nonplanar heightfield");
+    const auto oldStamp = bake.report().stamp;
+    auto invalid = region;
+    invalid.contentVersion = 2;
+    invalid.primaryHeightfield->heights[2] =
+        std::numeric_limits<double>::quiet_NaN();
+    check(bake.publishRegion(invalid).error == Error::Invalid
+          && bake.report().stamp == oldStamp,
+          "nonfinite terrain sample rejects without graph publication");
+    invalid = region;
+    invalid.contentVersion = 2;
+    invalid.primaryHeightfield->heights.pop_back();
+    check(bake.publishRegion(invalid).error == Error::Invalid
+          && bake.report().stamp == oldStamp,
+          "incomplete terrain grid rejects without graph publication");
+    invalid = region;
+    invalid.contentVersion = 2;
+    invalid.primaryHeightfield = BakeHeightfield{64, 2,
+        std::vector<double>(128, 0.0)};
+    check(bake.publishRegion(invalid).error == Error::Invalid
+          && bake.report().stamp == oldStamp,
+          "terrain detail finer than bake budget rejects atomically");
+    auto spike = region;
+    spike.contentVersion = 2;
+    spike.primaryHeightfield = BakeHeightfield{9, 2,
+        {0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+         0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}};
+    auto blocked = bake.publishRegion(spike);
+    check(bool(blocked) && route(blocked.value,
+          {1, {0.5, 0.0, 0.5}}, {1, {3.5, 0.0, 0.5}}, {},
+          Steering::Spatial).status == PlanStatus::Unreachable,
+          "subcell ridge blocks a link with equal endpoint heights");
+    auto unchanged = bake.refreshRegion(spike);
+    check(bool(unchanged) && bake.report().stamp == blocked.value->stamp(),
+          "unchanged terrain refresh retains navigation revision");
+    auto restored = bake.refreshRegion(region);
+    check(bool(restored) && bake.report().geometryRebakes == 1
+          && route(restored.value, start, goal, {}, Steering::Spatial).status
+              == PlanStatus::Found,
+          "changed terrain refresh republishes local geometry");
+}
 void retiredTargetDoesNotReplayOldSound()
 {
     PerceptionMemory memory({10.0, 0.8, 10, 4});
@@ -459,6 +519,7 @@ int main()
         perceptionSnapshotRoundTrip();
         stackedFloorsNeedExplicitTraversal();
         planarRampRespectsGradeAndAtomicRevision();
+        nonplanarHeightfieldBakesAndRejectsHiddenCliffs();
         std::cout << "AYNavigation: spatial awareness passed\n";
     } catch (const std::exception& error) {
         std::cerr << "AYNavigation: " << error.what() << '\n';

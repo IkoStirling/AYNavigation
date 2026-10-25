@@ -48,10 +48,55 @@ bool validRamp(const BakeRamp& ramp)
         <= 1e-4;
 }
 
+bool validHeightfield(const BakeBox& floor, const BakeHeightfield& field,
+                      double bakeCellSize)
+{
+    if (field.columns < 2 || field.rows < 2
+        || field.columns > 64 || field.rows > 64
+        || field.heights.size()
+            != std::size_t(field.columns) * std::size_t(field.rows)
+        || !std::isfinite(bakeCellSize) || bakeCellSize <= 0.0)
+        return false;
+    const double spacingX = (floor.maximum.x - floor.minimum.x)
+        / double(field.columns - 1);
+    const double spacingZ = (floor.maximum.z - floor.minimum.z)
+        / double(field.rows - 1);
+    if (spacingX < bakeCellSize * 0.25
+        || spacingZ < bakeCellSize * 0.25)
+        return false;
+    for (double y : field.heights)
+        if (!std::isfinite(y) || y < floor.minimum.y
+            || y > floor.maximum.y) return false;
+    return true;
+}
+
 double surfaceY(const BakeBox& floor, const BakeRamp* ramp,
+                const BakeHeightfield* field,
                 double x, double z) noexcept
 {
-    if (!ramp) return floor.maximum.y;
+    if (!ramp && !field) return floor.maximum.y;
+    if (field) {
+        const double u = std::clamp((x - floor.minimum.x)
+            / (floor.maximum.x - floor.minimum.x)
+            * double(field->columns - 1), 0.0, double(field->columns - 1));
+        const double v = std::clamp((z - floor.minimum.z)
+            / (floor.maximum.z - floor.minimum.z)
+            * double(field->rows - 1), 0.0, double(field->rows - 1));
+        const auto x0 = std::min<std::size_t>(
+            std::size_t(std::floor(u)), field->columns - 2);
+        const auto z0 = std::min<std::size_t>(
+            std::size_t(std::floor(v)), field->rows - 2);
+        const double fx = u - double(x0), fz = v - double(z0);
+        const auto& values = field->heights;
+        const auto stride = std::size_t(field->columns);
+        const double y00 = values[z0 * stride + x0];
+        const double y10 = values[z0 * stride + x0 + 1];
+        const double y01 = values[(z0 + 1) * stride + x0];
+        const double y11 = values[(z0 + 1) * stride + x0 + 1];
+        return (1.0 - fx) * (1.0 - fz) * y00
+            + fx * (1.0 - fz) * y10
+            + (1.0 - fx) * fz * y01 + fx * fz * y11;
+    }
     const double u = (x - floor.minimum.x) /
         (floor.maximum.x - floor.minimum.x);
     const double v = (z - floor.minimum.z) /
@@ -73,7 +118,8 @@ bool intersects(double minX, double maxX, double minZ, double maxZ,
 }
 
 bool clearCorridor(const BakeRegion& region, const BakeBox& floor, Vec3 a, Vec3 b,
-                   double width, double height)
+                   double width, double height,
+                   double minFloorY, double maxFloorY)
 {
     const double half = width * 0.5;
     const double minX = std::min(a.x, b.x) - half;
@@ -85,7 +131,7 @@ bool clearCorridor(const BakeRegion& region, const BakeBox& floor, Vec3 a, Vec3 
         return false;
     for (const auto& blocker : region.blockers)
         if (intersects(minX, maxX, minZ, maxZ, blocker,
-                       std::min(a.y, b.y), std::max(a.y, b.y), height))
+                       minFloorY, maxFloorY, height))
             return false;
     return true;
 }
@@ -110,7 +156,10 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::publishRegion(
     BakeRegion region)
 {
     if (!region.id || !region.contentVersion || !validBox(region.floor, true)
-        || region.additionalFloors.size() + region.ramps.size() > 16)
+        || region.additionalFloors.size() + region.ramps.size() > 16
+        || (region.primaryHeightfield
+            && !validHeightfield(region.floor, *region.primaryHeightfield,
+                                 _config.cellSize)))
         return {Error::Invalid};
     for (const auto& floor : region.additionalFloors)
         if (!validBox(floor, true)) return {Error::Invalid};
@@ -157,7 +206,8 @@ Result<std::shared_ptr<const GraphSpace>> StaticBakeWorld::refreshRegion(
         if (region.floor == previous.floor
             && region.blockers == previous.blockers
             && region.additionalFloors == previous.additionalFloors
-            && region.ramps == previous.ramps)
+            && region.ramps == previous.ramps
+            && region.primaryHeightfield == previous.primaryHeightfield)
             return {Error::None, _graph};
         if (previous.contentVersion == std::numeric_limits<std::uint64_t>::max())
             return {Error::Budget};
@@ -209,12 +259,17 @@ Result<StaticBakeWorld::RegionFragment> StaticBakeWorld::bakeRegion(
         if (index <= region.additionalFloors.size()) return nullptr;
         return &region.ramps[index - 1 - region.additionalFloors.size()];
     };
+    auto fieldAt = [&](std::size_t index) -> const BakeHeightfield* {
+        return index == 0 && region.primaryHeightfield
+            ? &*region.primaryHeightfield : nullptr;
+    };
     std::vector<RegionGrid> grids;
     grids.reserve(surfaces);
     NodeId nextNode = 1;
     for (std::size_t surface = 0; surface < surfaces; ++surface) {
         const auto& floor = floorAt(surface);
         const auto* ramp = rampAt(surface);
+        const auto* field = fieldAt(surface);
         const double dx = floor.maximum.x - floor.minimum.x;
         const double dz = floor.maximum.z - floor.minimum.z;
         if (!std::isfinite(dx) || !std::isfinite(dz)
@@ -236,9 +291,11 @@ Result<StaticBakeWorld::RegionFragment> StaticBakeWorld::bakeRegion(
             for (std::size_t x = 0; x < nx; ++x) {
                 const double worldX = floor.minimum.x + (double(x) + 0.5) * _config.cellSize;
                 const double worldZ = floor.minimum.z + (double(z) + 0.5) * _config.cellSize;
-                const Vec3 center{worldX, surfaceY(floor, ramp, worldX, worldZ), worldZ};
+                const Vec3 center{worldX,
+                    surfaceY(floor, ramp, field, worldX, worldZ), worldZ};
                 if (!clearCorridor(region, floor, center, center,
-                                   _config.corridorWidth, _config.agentHeight)) {
+                                   _config.corridorWidth, _config.agentHeight,
+                                   center.y, center.y)) {
                     ++fragment.blockedCells;
                     continue;
                 }
@@ -251,6 +308,7 @@ Result<StaticBakeWorld::RegionFragment> StaticBakeWorld::bakeRegion(
     LinkId nextLink = 1;
     for (std::size_t surface = 0; surface < surfaces; ++surface) {
         const auto& floor = floorAt(surface);
+        const auto* field = fieldAt(surface);
         const auto& grid = grids[surface];
         for (std::size_t z = 0; z < grid.nz; ++z) {
             for (std::size_t x = 0; x < grid.nx; ++x) {
@@ -264,11 +322,34 @@ Result<StaticBakeWorld::RegionFragment> StaticBakeWorld::bakeRegion(
                     const auto a = fragment.nodes[id - 1].location.position;
                     const auto b = fragment.nodes[neighbor - 1].location.position;
                     const double horizontal = std::hypot(a.x - b.x, a.z - b.z);
-                    if (std::abs(a.y - b.y)
+                    double minFloorY = std::min(a.y, b.y);
+                    double maxFloorY = std::max(a.y, b.y);
+                    if (field) {
+                        bool tooSteep = false;
+                        Vec3 previous = a;
+                        for (int sample = 1; sample <= 16; ++sample) {
+                            const double t = double(sample) / 16.0;
+                            const Vec3 point{a.x + (b.x - a.x) * t,
+                                surfaceY(floor, nullptr, field,
+                                    a.x + (b.x - a.x) * t,
+                                    a.z + (b.z - a.z) * t),
+                                a.z + (b.z - a.z) * t};
+                            minFloorY = std::min(minFloorY, point.y);
+                            maxFloorY = std::max(maxFloorY, point.y);
+                            if (std::abs(point.y - previous.y)
+                                > _config.maxRisePerHorizontal
+                                    * std::hypot(point.x - previous.x,
+                                                 point.z - previous.z) + 1e-9)
+                                tooSteep = true;
+                            previous = point;
+                        }
+                        if (tooSteep) continue;
+                    } else if (std::abs(a.y - b.y)
                         > _config.maxRisePerHorizontal * horizontal + 1e-9)
                         continue;
                     if (!clearCorridor(region, floor, a, b,
-                                       _config.corridorWidth, _config.agentHeight))
+                                       _config.corridorWidth, _config.agentHeight,
+                                       minFloorY, maxFloorY))
                         continue;
                     if (fragment.links.size() + 2 > maxLinks) return {Error::Budget};
                     const auto linkCost = static_cast<std::uint64_t>(

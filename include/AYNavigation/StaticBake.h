@@ -2,8 +2,10 @@
 
 #include <AYNavigation/Graph.h>
 
+#include <cstdint>
 #include <map>
 #include <optional>
+#include <vector>
 
 namespace ayt::navigation {
 
@@ -24,6 +26,17 @@ struct BakeRamp {
     bool operator==(const BakeRamp&) const = default;
 };
 
+/// Optional nonplanar top for the primary region floor. Row-major height
+/// samples span the floor's full XZ footprint, including all four corners.
+/// The Host supplies 2..64 samples per axis. Every sample lies within the
+/// floor's Y bounds; spacing must be at least one quarter of the bake cell.
+/// Adjacent navigation links sample this surface and reject excessive rise.
+struct BakeHeightfield {
+    std::uint32_t columns = 0, rows = 0;
+    std::vector<double> heights;
+    bool operator==(const BakeHeightfield&) const = default;
+};
+
 /// One primary horizontal floor, optional extra flat/ramp surfaces and static
 /// blockers. The authoring tool/Host supplies finite world-space geometry and
 /// a persistent region ID.
@@ -39,6 +52,10 @@ struct BakeRegion {
     /// Optional planar ramps, each on its own grid; footprints must not
     /// overlap flat floors or other ramps in XZ interior.
     std::vector<BakeRamp> ramps;
+    /// When present, the primary floor uses these nonplanar heights instead
+    /// of its constant maximum Y. Authored from terrain; the World Box adapter
+    /// does not infer a heightfield from arbitrary meshes.
+    std::optional<BakeHeightfield> primaryHeightfield;
     bool operator==(const BakeRegion&) const = default;
 };
 
@@ -75,7 +92,7 @@ struct BakeReport {
     std::size_t disabledConnections = 0;
 };
 
-/// Bounded, deterministic 2.5D flat/ramp grid bake into the existing immutable
+/// Bounded, deterministic 2.5D flat/ramp/heightfield grid bake into the immutable
 /// GraphSpace. Changed region geometry is rebaked locally, then the complete
 /// immutable graph is recompiled for one atomic revision. Unchanged resident
 /// region fragments retain their node/link IDs across other region updates.

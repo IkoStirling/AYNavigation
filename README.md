@@ -23,7 +23,8 @@
 
 ## Static walkable bake and NPC perception
 
-`StaticBakeWorld` converts bounded horizontal floors, planar ramp rectangles and static blocker
+`StaticBakeWorld` converts bounded horizontal floors, planar ramp rectangles, optional
+primary-floor heightfields and static blocker
 boxes into an immutable `GraphSpace` revision. The caller extracts these shapes from Scene
 content, supplies persistent region IDs and increasing content versions, and publishes the
 new graph to `Navigator::publish` at a quiescent frame boundary. A failed bake retains the
@@ -54,6 +55,14 @@ Overlapping flat floors at the same height, and any ramp overlapping another
 surface in XZ interior, are rejected before publication. Ordinary ramp links
 respect `BakeConfig::maxRisePerHorizontal`; use Spatial steering and a motor
 that can follow the slope because Planar steering rejects vertical velocity.
+The primary floor may instead carry `BakeHeightfield` with 2..64 row-major
+samples per axis spanning its XZ bounds. Heights must be finite and inside its
+Y bounds, with sample spacing at least a quarter of the bake cell size. Node
+heights are bilinear; each ordinary link samples sixteen points so a ridge
+between equal-height endpoints can block passage. Authored heightfield changes
+participate in `refreshRegion` versioning. The Box World adapter does not
+extract terrain; a game or terrain tool supplies the samples and a motor that
+can follow the resulting surface.
 
 `PerceptionMemory` receives stable target IDs, target feet/aim points, current-step sound
 stimuli, and a Host-owned visibility query. It returns a generic Chase, Search or Return

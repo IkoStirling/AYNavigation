@@ -245,8 +245,9 @@ and no manual desktop/Release/backend matrix/cross-platform/crowd qualification 
 ## 10. Static topology bake and perception (v0.4)
 
 StaticBakeWorld owns versioned authoring input by persistent region ID. Each BakeRegion
-describes one horizontal floor rectangle, up to sixteen additional flat floors or
-planar ramps, and static axis-aligned blocker boxes. The Host
+describes one primary floor rectangle with an optional sampled nonplanar top,
+up to sixteen additional flat floors or planar ramps, and static axis-aligned
+blocker boxes. The Host
 extracts these from current Scene content; dynamic actors remain in ObstacleSource. The
 config bounds cell/link count and fixes cell size, corridor width and agent height. Every
 cell center must have a clear rectangular corridor footprint, and every adjacent link must
@@ -277,7 +278,8 @@ must be resolved by its authoritative movement adapter. Unloading a region remov
 nodes; connections referring to it become dormant and reactivate on reload. If the final
 region unloads, `current()` becomes null; `navigationSpace()` still publishes a denying
 revision. The Host cancels gameplay work or detaches agents according to its own lifecycle.
-The optional `refreshRegion` compares observed floor, blocker and ramp geometry
+The optional `refreshRegion` compares observed floor, blocker, ramp and
+heightfield geometry
 with the last accepted region, ignoring the caller's contentVersion. Equal
 geometry returns the current graph without a new stamp. Changed geometry uses
 the prior region version plus one (or one for a new region) and enters the same
@@ -287,7 +289,7 @@ Connections are explicit directed special links whose endpoints snap to a free c
 one cell size. Their traversal kind/resource/capacity are authored from the same connected
 space topology as movement; the bake does not move an Entity or physical body. A real
 Traversal must use the existing connected-space authority. The simple bake intentionally
-excludes arbitrary mesh NavMesh, curved/nonplanar slopes, exact dynamic obstacle shapes and
+excludes arbitrary mesh NavMesh, exact dynamic obstacle shapes and
 incremental tile updates; a region edit rebuilds the bounded graph.
 Up to sixteen additional flat floors or planar ramps may be authored in one region.
 Each surface receives an independent bounded grid and shares the region's
@@ -303,6 +305,18 @@ distance reflected in cost. A ramp cannot overlap another authored surface
 in XZ interior. Spatial steering and a compatible motor are required for
 ascending ordinary links; Planar steering rejects height-changing motion.
 This does not infer stairs or arbitrary mesh surfaces.
+An optional `BakeHeightfield` replaces the primary floor's constant top Y.
+Its 2..64 by 2..64 row-major finite samples span the full XZ footprint and
+stay inside the floor's Y bounds. Spacing must be at least one quarter of the
+bake cell size, bounding subcell detail relative to the route grid. Cell
+centers use bilinear height; each ordinary link samples sixteen intermediate
+positions and checks local rise against `maxRisePerHorizontal`. The sampled
+height envelope also enters blocker headroom checks along a link, so a ridge
+between equal-height endpoint nodes cannot silently connect them. This is a
+bounded terrain grid, not a triangle-mesh NavMesh or exact continuous terrain
+collision proof. A Spatial Motor must follow the same authored surface, and
+the game/terrain tool supplies height samples because static Box extraction
+cannot reconstruct a heightfield.
 
 PerceptionMemory is one-NPC, single-thread state. Sight targets carry stable persistent IDs,
 feet/navigation locations and optional aim points. A valid in-range/cone target is visible

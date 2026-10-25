@@ -60,6 +60,10 @@ a still-present event can be heard once after the listener approaches it.
 It also clears sound-event deduplication owned by that region, so a reloaded
 region can deliver its current sound facts without waiting for old IDs to age out.
 Failed visibility queries leave memory unchanged. No Entity or Physics handles are retained.
+`snapshot` copies the fixed-tick target records and heard-event receipts for save/restore;
+`restore` accepts only schema 1 with an identical `PerceptionConfig`, valid bounded
+records and tick order, publishing the whole state atomically. Restore before the next
+fixed tick, then call `forgetRegion` for regions that are not resident.
 The optional `SoundTravelQuery` replaces the same-region Euclidean test with a
 Host-supplied nonnegative route distance. A missing route remains unheard; a
 failed query aborts the whole update without consuming any sound event.

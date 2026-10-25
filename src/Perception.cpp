@@ -158,4 +158,58 @@ void PerceptionMemory::forgetRegion(RegionId region) noexcept
     }
 }
 
+PerceptionMemorySnapshot PerceptionMemory::snapshot() const
+{
+    PerceptionMemorySnapshot result;
+    result.config = _config;
+    result.lastTick = _lastTick;
+    result.targets.reserve(_memory.size());
+    result.heardSounds.reserve(_seenSounds.size());
+    for (const auto& [id, remembered] : _memory)
+        result.targets.push_back({id, remembered.lastKnown, remembered.lastTick});
+    for (const auto& [eventId, sound] : _seenSounds)
+        result.heardSounds.push_back({eventId, sound.region, sound.lastTick});
+    return result;
+}
+
+Error PerceptionMemory::restore(const PerceptionMemorySnapshot& snapshot)
+{
+    if (snapshot.schema != PerceptionMemorySnapshot::currentSchema
+        || snapshot.config != _config
+        || !std::isfinite(_config.visualRange) || _config.visualRange <= 0.0
+        || !std::isfinite(_config.halfAngleRadians)
+        || _config.halfAngleRadians <= 0.0
+        || _config.halfAngleRadians > 3.14159265358979323846
+        || !_config.memoryTicks || !_config.maxEntries || _config.maxEntries > 1024
+        || snapshot.targets.size() > _config.maxEntries
+        || snapshot.heardSounds.size() > _config.maxEntries * 4
+        || (!snapshot.lastTick
+            && (!snapshot.targets.empty() || !snapshot.heardSounds.empty())))
+        return Error::Invalid;
+
+    std::map<std::string, Remembered> memory;
+    std::map<std::uint64_t, SeenSound> sounds;
+    for (const auto& target : snapshot.targets) {
+        if (target.persistentId.empty() || !target.lastKnown.region
+            || !finite(target.lastKnown.position) || !target.lastTick
+            || target.lastTick > snapshot.lastTick
+            || snapshot.lastTick - target.lastTick > _config.memoryTicks
+            || !memory.emplace(target.persistentId,
+                               Remembered{target.lastKnown, target.lastTick}).second)
+            return Error::Invalid;
+    }
+    for (const auto& sound : snapshot.heardSounds) {
+        if (!sound.eventId || !sound.region || !sound.lastTick
+            || sound.lastTick > snapshot.lastTick
+            || snapshot.lastTick - sound.lastTick > _config.memoryTicks
+            || !sounds.emplace(sound.eventId,
+                               SeenSound{sound.region, sound.lastTick}).second)
+            return Error::Invalid;
+    }
+    _memory.swap(memory);
+    _seenSounds.swap(sounds);
+    _lastTick = snapshot.lastTick;
+    return Error::None;
+}
+
 } // namespace ayt::navigation

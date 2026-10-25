@@ -3,6 +3,7 @@
 
 #include <array>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 
 using namespace ayt::navigation;
@@ -336,6 +337,60 @@ void planarRampRespectsGradeAndAtomicRevision()
           {24, 25}, Steering::Spatial).status == PlanStatus::Unreachable,
           "ordinary links reject an excessive grade");
 }
+void perceptionSnapshotRoundTrip()
+{
+    const PerceptionConfig config{10.0, 0.8, 5, 4};
+    PerceptionMemory original(config);
+    Visibility visibility;
+    const Location eye{1, {0, 1, 0}};
+    const Location home{1, {0, 0, 0}};
+    const SoundStimulus sound{41, "visitor", {1, {2, 0, 0}}, 4.0};
+    check(bool(original.update(1, eye, {1, 0, 0}, {},
+                               std::array{sound}, home, visibility)),
+          "snapshot source hears sound");
+    const auto saved = original.snapshot();
+    check(saved.lastTick == 1 && saved.targets.size() == 1
+          && saved.heardSounds.size() == 1,
+          "snapshot owns target and sound receipt");
+
+    PerceptionMemory restored(config);
+    check(restored.restore(saved) == Error::None,
+          "restore matching perception state");
+    check(restored.snapshot().targets.front().lastKnown == sound.location,
+          "restore last known location");
+    auto staleTick = restored.update(1, eye, {1, 0, 0}, {}, {}, home, visibility);
+    check(staleTick.error == Error::Invalid, "restored tick rejects replay");
+    SoundStimulus sameIdMoved = sound;
+    sameIdMoved.location.position.x = 3;
+    auto replay = restored.update(2, eye, {1, 0, 0}, {},
+                                  std::array{sameIdMoved}, home, visibility);
+    check(bool(replay) && replay.value.mode == PursuitMode::Search
+          && replay.value.goal == sound.location,
+          "restored sound receipt prevents memory refresh");
+
+    auto malformed = saved;
+    malformed.heardSounds.push_back(saved.heardSounds.front());
+    check(restored.restore(malformed) == Error::Invalid
+          && restored.snapshot().lastTick == 2,
+          "duplicate receipt restore is atomic");
+    malformed = saved;
+    malformed.targets.front().lastKnown.position.x =
+        std::numeric_limits<double>::infinity();
+    check(restored.restore(malformed) == Error::Invalid
+          && restored.snapshot().lastTick == 2,
+          "nonfinite target restore is atomic");
+    malformed = saved;
+    malformed.schema++;
+    check(restored.restore(malformed) == Error::Invalid,
+          "unknown schema rejected");
+    PerceptionMemory changedConfig({10.0, 0.8, 6, 4});
+    check(changedConfig.restore(saved) == Error::Invalid,
+          "config mismatch rejected");
+    restored.forgetRegion(1);
+    check(restored.snapshot().targets.empty()
+          && restored.snapshot().heardSounds.empty(),
+          "region unload clears restored state");
+}
 } // namespace
 
 int main()
@@ -343,6 +398,7 @@ int main()
     try {
         bakeAndUpdate();
         visualAudioMemory();
+        perceptionSnapshotRoundTrip();
         stackedFloorsNeedExplicitTraversal();
         planarRampRespectsGradeAndAtomicRevision();
         std::cout << "AYNavigation: spatial awareness passed\n";

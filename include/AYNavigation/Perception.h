@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace ayt::navigation {
 
@@ -50,6 +51,28 @@ struct PerceptionConfig {
     double halfAngleRadians = 1.0;
     std::uint64_t memoryTicks = 90;
     std::size_t maxEntries = 32;
+    bool operator==(const PerceptionConfig&) const = default;
+};
+
+/// Owned fixed-tick state for a single NPC. Persist with its matching config;
+/// restore before resuming updates and after any unloaded regions are forgotten.
+struct PerceptionMemorySnapshot {
+    static constexpr std::uint32_t currentSchema = 1;
+    struct Target {
+        std::string persistentId;
+        Location lastKnown;
+        std::uint64_t lastTick = 0;
+    };
+    struct HeardSound {
+        std::uint64_t eventId = 0;
+        RegionId region = 0;
+        std::uint64_t lastTick = 0;
+    };
+    std::uint32_t schema = currentSchema;
+    PerceptionConfig config;
+    std::uint64_t lastTick = 0;
+    std::vector<Target> targets;
+    std::vector<HeardSound> heardSounds;
 };
 
 enum class PursuitMode { Return, Search, Chase };
@@ -74,6 +97,11 @@ public:
     /// Clears both remembered targets and sound deduplication for that region.
     void forgetRegion(RegionId region) noexcept;
     [[nodiscard]] std::size_t rememberedCount() const noexcept { return _memory.size(); }
+    /// Copy stable IDs, positions and sound receipts; no live handles are retained.
+    [[nodiscard]] PerceptionMemorySnapshot snapshot() const;
+    /// Validate and publish an entire snapshot atomically. Invalid or incompatible
+    /// data leaves the prior memory and tick untouched.
+    Error restore(const PerceptionMemorySnapshot& snapshot);
 
 private:
     struct Remembered { Location lastKnown; std::uint64_t lastTick = 0; };

@@ -315,6 +315,14 @@ unloaded-region records and their sound-ID receipts before transient Entity tear
 a reloaded region may reuse its sound facts immediately. No Entity or Physics handles are
 retained across frames. The standalone sample uses a simulated motor and visibility query;
 live Jolt/audio/Scene lifecycle wiring remains Host work.
+`PerceptionMemorySnapshot` is an owned schema-1 save boundary for one NPC. It records
+the configured limits, last committed tick, target locations/observation ticks and
+heard sound IDs/regions/ticks. Ordered maps make emitted records deterministic.
+Restore validates schema, exact config, finite locations, unique nonzero IDs,
+retention age and entry budgets in temporary maps before swapping them into the
+live memory. A rejected restore keeps the previous tick and records. The Host
+persists the snapshot with the NPC's stable identity, restores before advancing
+fixed ticks and drops records for regions no longer loaded with `forgetRegion`.
 An optional `SoundTravelQuery` can supply a route distance for each unheard
 sound. A successful empty route leaves the event eligible; a failed or invalid
 query rolls back the entire fixed-step update. The default remains same-region

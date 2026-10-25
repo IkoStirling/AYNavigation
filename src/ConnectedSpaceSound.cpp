@@ -31,12 +31,17 @@ Result<std::optional<double>> ConnectedSpaceSoundTravel::distance(
         return {Error::None, std::nullopt};
 
     std::vector<const entity::SpacePortal*> portals;
+    std::vector<double> crossingCosts;
     for (const auto& portal : _spaces.portals()) {
         if (!portal.enabled || (_available &&
             (!_available(portal.source) || !_available(portal.destination))))
             continue;
         if (portals.size() == _maxPortals) return {Error::Budget};
+        const double crossingCost = _portalCost ? _portalCost(portal) : 0.0;
+        if (!std::isfinite(crossingCost) || crossingCost < 0.0)
+            return {Error::QueryFailed};
         portals.push_back(&portal);
+        crossingCosts.push_back(crossingCost);
     }
 
     const double infinity = std::numeric_limits<double>::infinity();
@@ -46,7 +51,8 @@ Result<std::optional<double>> ConnectedSpaceSoundTravel::distance(
     std::vector<bool> visited(portals.size(), false);
     for (std::size_t i = 0; i < portals.size(); ++i)
         if (portals[i]->source == listener.region)
-            costs[i] = length(listener.position - position(portals[i]->entrance.position));
+            costs[i] = length(listener.position - position(portals[i]->entrance.position))
+                + crossingCosts[i];
 
     for (std::size_t step = 0; step < portals.size(); ++step) {
         std::size_t next = portals.size();
@@ -63,7 +69,8 @@ Result<std::optional<double>> ConnectedSpaceSoundTravel::distance(
         for (std::size_t i = 0; i < portals.size(); ++i)
             if (!visited[i] && portals[i]->source == crossed.destination)
                 costs[i] = std::min(costs[i], costs[next]
-                    + length(exit - position(portals[i]->entrance.position)));
+                    + length(exit - position(portals[i]->entrance.position))
+                    + crossingCosts[i]);
     }
     if (std::isnan(best)) return {Error::QueryFailed};
     return {Error::None, std::isfinite(best)

@@ -69,8 +69,12 @@ enabled portal centers, including multi-hop paths and same-region shortcuts.
 Call it at a quiescent topology boundary; supply a `RegionAvailable` predicate
 (for example, `WorldRegionStream::isLoaded`) to exclude unloaded intermediate
 regions. Its portal budget defaults to 128 and exhaustion is a query error.
-This is geometric range approximation: opening area, walls, diffraction and
-attenuation are not modeled. Sound event production and NPC task policy remain
+An optional pure `PortalCost` callback supplies a finite nonnegative equivalent
+distance for each directed crossing. The shortest path includes that cost, so
+the Host can represent an acoustically resistant door without changing its
+movement connection. Invalid costs fail the query and do not consume events.
+This is still a range approximation: opening area, walls, diffraction and
+frequency-dependent attenuation are not modeled. Sound event production and NPC task policy remain
 with the Host/game.
 
 Run `AYNavigationSpatialAwarenessExample` for a small baked 3D room where one simulated NPC

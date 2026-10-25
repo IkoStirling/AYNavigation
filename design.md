@@ -323,11 +323,16 @@ directed enabled portals as a bounded shortest-path graph. Each intra-region
 leg runs directly between listener, portal centers and sound; crossing costs
 zero, matching the rigid portal connection rather than physical distance
 between its two poses. It may find a shortcut back into the source region.
+An optional `PortalCost` adds an equivalent-distance crossing penalty to each
+directed edge. The callback is evaluated once per eligible portal before route
+search; nonfinite or negative costs fail the query, preserving the perception
+update's atomicity. The Host may vary costs between fixed-step updates as door
+state changes, while keeping the callback pure during an update.
 An optional pure residency predicate excludes unloaded endpoints and intermediate
 regions. Query only at a quiescent topology boundary; no portal pointer survives
 the call. The bounded O(P²) search fails when the eligible portal count exceeds
 the configured limit. This does not model aperture, wall occlusion, diffraction,
-attenuation or acoustic material response. A Host may implement `SoundTravelQuery`
+frequency-dependent attenuation or acoustic material response. A Host may implement `SoundTravelQuery`
 with those rules without changing perception memory.
 
 ## 11. Optional Scene World and Physics query adapter

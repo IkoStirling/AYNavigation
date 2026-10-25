@@ -302,6 +302,70 @@ void connected_space_sound_follows_directed_resident_portals()
     const auto disabled = travel.distance(ear, sound);
     CHECK(disabled && !disabled.value);
 }
+
+void connected_space_sound_accounts_for_portal_crossing_cost()
+{
+    Fixture fixture;
+    auto& spaces = fixture.world.connectedSpaces();
+    CHECK(spaces.addRegion(2));
+    CHECK(spaces.addRegion(3));
+    ayt::entity::SpacePortal direct;
+    direct.id = 20;
+    direct.source = 1;
+    direct.destination = 2;
+    direct.entrance.position = {1, 0, 0};
+    direct.exit.position = {1, 0, 0};
+    CHECK(spaces.setPortal(direct));
+    ayt::entity::SpacePortal detour = direct;
+    detour.id = 21;
+    detour.destination = 3;
+    detour.entrance.position = {2, 0, 0};
+    detour.exit.position = {0, 0, 0};
+    CHECK(spaces.setPortal(detour));
+    detour.id = 22;
+    detour.source = 3;
+    detour.destination = 2;
+    detour.entrance.position = {0, 0, 0};
+    detour.exit.position = {1, 0, 0};
+    CHECK(spaces.setPortal(detour));
+
+    double directCost = 5.0;
+    ConnectedSpaceSoundTravel travel(spaces, 128, {},
+        [&](const ayt::entity::SpacePortal& portal) {
+            return portal.id == direct.id ? directCost : 0.0;
+        });
+    const Location ear{1, {0, 0, 0}};
+    const SoundStimulus sound{201, "through-door", {2, {2, 0, 0}}, 2.5};
+    const auto detoured = travel.distance(ear, sound);
+    CHECK(detoured && detoured.value && std::abs(*detoured.value - 3.0) < 1e-9);
+    directCost = 0.0;
+    const auto opened = travel.distance(ear, sound);
+    CHECK(opened && opened.value && std::abs(*opened.value - 2.0) < 1e-9);
+
+    struct Clear final : VisibilityQuery {
+        Result<bool> clear(Location, const SightTarget&) override
+        { return {Error::None, true}; }
+    } clear;
+    PerceptionMemory memory;
+    directCost = 5.0;
+    CHECK(memory.update(1, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &travel));
+    CHECK(memory.rememberedCount() == 0);
+    directCost = 0.0;
+    CHECK(memory.update(2, ear, {1, 0, 0}, {},
+        std::array{sound}, ear, clear, &travel));
+    CHECK(memory.rememberedCount() == 1);
+
+    for (double invalid : {-1.0, std::numeric_limits<double>::infinity(),
+        std::numeric_limits<double>::quiet_NaN()}) {
+        directCost = invalid;
+        CHECK(travel.distance(ear, sound).error == Error::QueryFailed);
+        PerceptionMemory rollback;
+        CHECK(rollback.update(1, ear, {1, 0, 0}, {},
+            std::array{sound}, ear, clear, &travel).error == Error::QueryFailed);
+        CHECK(rollback.rememberedCount() == 0);
+    }
+}
 } // namespace
 
 TEST_MAIN(
@@ -311,4 +375,5 @@ TEST_MAIN(
     RUN(observed_static_geometry_refreshes_without_manual_version);
     RUN(physics_ray_uses_world_identity_and_region_mask);
     RUN(connected_space_sound_follows_directed_resident_portals);
+    RUN(connected_space_sound_accounts_for_portal_crossing_cost);
 )

@@ -43,6 +43,10 @@ still recompiled for atomic publication. Nodes and local links in unchanged
 resident regions retain their IDs when another region or its connections change;
 routes still use the new graph stamp and must be replanned. `BakeReport::geometryRebakes` reports
 how many region geometries were recalculated in the last publication.
+`AYNavigationBakeScaleTest` measures one-region replacement in 1/16/64 region
+graphs without a time-based pass threshold. GraphSpace now reserves hash lookup
+indices for nodes/links; authored arrays stay sorted by stable ID. Compilation
+still touches the complete graph and should be scheduled at a quiet boundary.
 For current Scene geometry, `WorldBakeAdapter::refreshRegion` extracts the
 region and advances its content version only when floor, ramp or blocker geometry
 changes. Repeating an unchanged refresh returns the existing graph; failed

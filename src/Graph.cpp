@@ -35,6 +35,8 @@ Result<std::shared_ptr<const GraphSpace>> GraphSpace::compile(GraphDefinition de
     std::sort(definition.nodes.begin(),definition.nodes.end(),[](const auto& a,const auto& b){return a.id<b.id;});
     std::sort(definition.links.begin(),definition.links.end(),[](const auto& a,const auto& b){return a.id<b.id;});
     graph->_definition=std::move(definition);
+    graph->_nodes.reserve(graph->_definition.nodes.size());
+    graph->_links.reserve(graph->_definition.links.size());
     for(std::size_t i=0;i<graph->_definition.nodes.size();++i) {
         const auto& node=graph->_definition.nodes[i];
         if(!node.id || !node.location.region || !finite(node.location.position)) return {Error::Invalid};

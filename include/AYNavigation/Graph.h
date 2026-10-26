@@ -1,5 +1,6 @@
 #pragma once
 #include <AYNavigation/Navigation.h>
+#include <unordered_map>
 
 namespace ayt::navigation {
 struct Node {NodeId id=0;Location location;};
@@ -32,7 +33,10 @@ public:
     Step step(const Link&,Location from,Location to) const;
 private:
     GraphDefinition _definition;
-    std::map<NodeId,std::size_t> _nodes;std::map<LinkId,std::size_t> _links;
+    // Only keyed lookup is exposed; hash indices avoid a full tree allocation
+    // per node/link when a streamed region publishes a new immutable graph.
+    std::unordered_map<NodeId,std::size_t> _nodes;
+    std::unordered_map<LinkId,std::size_t> _links;
 };
 /// Default bounded Dijkstra planner for GraphSpace. Stable (cost,node/link ID) ordering, capability
 /// and dimension-aware clearance, interior directed-corridor starts/goals and cross-region links.

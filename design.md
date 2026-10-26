@@ -262,6 +262,10 @@ GraphSpace is recompiled for every published revision. Unchanged resident region
 IDs survive other regions' edits; changed/unloaded regions and authored connection
 links may get new IDs. Old immutable graphs remain valid. `BakeReport::geometryRebakes` exposes
 the actual recalculation count; it is not a full graph compilation cost metric.
+GraphSpace keeps deterministic sorted node/link arrays and uses reserved hash
+lookup indices, avoiding per-element tree allocation on each revision. The
+1/16/64-region scale test reports elapsed replacement time and a lower bound
+for candidate vector memory; it does not promise a frame-time upper bound.
 
 Region publication checks increasing contentVersion. A same-version identical region is
 idempotent; changed content with the same/older version is stale. Rebuild happens in a

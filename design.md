@@ -347,6 +347,12 @@ retention age and entry budgets in temporary maps before swapping them into the
 live memory. A rejected restore keeps the previous tick and records. The Host
 persists the snapshot with the NPC's stable identity, restores before advancing
 fixed ticks and drops records for regions no longer loaded with `forgetRegion`.
+The optional `AYNavigation::PerceptionJson` codec stores that owner in an
+`AliyatPerceptionMemory` schema-1 JSON section capped at 1 MiB. Encode
+canonicalizes target/sound order via a temporary validated memory; decode
+validates types, finite positions, counts and the full `restore` contract
+before replacing the caller output. This codec has no independent file path;
+the game owns complete-slot SaveGame composition and NPC identity mapping.
 An optional `SoundTravelQuery` can supply a route distance for each unheard
 sound. A successful empty route leaves the event eligible; a failed or invalid
 query rolls back the entire fixed-step update. The default remains same-region

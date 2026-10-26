@@ -81,6 +81,11 @@ Failed visibility queries leave memory unchanged. No Entity or Physics handles a
 `restore` accepts only schema 1 with an identical `PerceptionConfig`, valid bounded
 records and tick order, publishing the whole state atomically. Restore before the next
 fixed tick, then call `forgetRegion` for regions that are not resident.
+When the optional `AYNavigation::PerceptionJson` target is present, use
+`encodePerceptionMemorySnapshot` and `decodePerceptionMemorySnapshot` for a
+bounded schema-1 JSON section. Decode validates through a temporary memory
+owner before replacing the output; the game saves this section with the NPC's
+stable identity and other World state in one complete SaveGame slot.
 The optional `SoundTravelQuery` replaces the same-region Euclidean test with a
 Host-supplied nonnegative route distance. A missing route remains unheard; a
 failed query aborts the whole update without consuming any sound event.

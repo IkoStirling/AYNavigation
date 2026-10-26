@@ -11,7 +11,8 @@ Result<PursuitDecision> PerceptionMemory::update(
     std::span<const SightTarget> targets,
     std::span<const SoundStimulus> sounds,
     Location home, VisibilityQuery& visibility,
-    SoundTravelQuery* soundTravel)
+    SoundTravelQuery* soundTravel,
+    SightTravelQuery* sightTravel)
 {
     if (!tick || tick <= _lastTick || !eye.region || !home.region
         || !finite(eye.position) || !finite(home.position)
@@ -83,17 +84,38 @@ Result<PursuitDecision> PerceptionMemory::update(
     double nearestDistance = _config.visualRange;
     Location visibleGoal;
     for (const auto& target : targets) {
-        if (target.location.region != eye.region) continue;
-        const auto sightPoint = target.sightPoint.region
-            ? target.sightPoint : target.location;
-        const auto delta = sightPoint.position - eye.position;
-        const double distance = length(delta);
+        const bool remote = target.location.region != eye.region;
+        if (remote && !sightTravel) continue;
+        Vec3 apparentAim;
+        double distance = 0.0;
+        if (remote) {
+            const auto sight = sightTravel->path(eye, target);
+            if (!sight) return {sight.error};
+            if (!sight.value) continue;
+            apparentAim = sight.value->apparentAim;
+            distance = sight.value->distance;
+            if (!finite(apparentAim) || !std::isfinite(distance)
+                || distance < 0.0) return {Error::QueryFailed};
+        } else {
+            const auto sightPoint = target.sightPoint.region
+                ? target.sightPoint : target.location;
+            apparentAim = sightPoint.position;
+            distance = length(apparentAim - eye.position);
+        }
         if (distance > _config.visualRange) continue;
-        if (distance > 0.0 && dot(facing, delta * (1.0 / distance)) < minCosine)
+        const auto delta = apparentAim - eye.position;
+        const double apparentLength = length(delta);
+        if (!std::isfinite(apparentLength)
+            || (remote && apparentLength <= 0.0))
+            return {Error::QueryFailed};
+        if (apparentLength > 0.0
+            && dot(facing, delta * (1.0 / apparentLength)) < minCosine)
             continue;
-        const auto line = visibility.clear(eye, target);
-        if (!line) return {Error::QueryFailed};
-        if (!line.value) continue;
+        if (!remote) {
+            const auto line = visibility.clear(eye, target);
+            if (!line) return {Error::QueryFailed};
+            if (!line.value) continue;
+        }
         stagedMemory[target.persistentId] = {target.location, tick};
         if (nearestVisible.empty() || distance < nearestDistance
             || (distance == nearestDistance

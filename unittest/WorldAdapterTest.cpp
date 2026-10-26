@@ -2,6 +2,7 @@
 
 #include <AYNavigation/PhysicsVisibility.h>
 #include <AYNavigation/ConnectedSpaceSound.h>
+#include <AYNavigation/ConnectedSpaceSight.h>
 #include <AYNavigation/WorldBake.h>
 #include <AYEntity.h>
 #include <AYEntity/World.h>
@@ -366,6 +367,75 @@ void connected_space_sound_accounts_for_portal_crossing_cost()
         CHECK(rollback.rememberedCount() == 0);
     }
 }
+
+void connected_space_sight_uses_the_actual_opening_and_keeps_memory_atomic()
+{
+    Fixture fixture;
+    auto& spaces = fixture.world.connectedSpaces();
+    CHECK(spaces.addRegion(2));
+    ayt::entity::SpacePortal portal;
+    portal.id = 30;
+    portal.source = 1;
+    portal.destination = 2;
+    portal.entrance.position = {0, 0, 1};
+    portal.exit.position = {0, 0, 100};
+    portal.halfWidth = 0.5f;
+    portal.halfHeight = 1.0f;
+    CHECK(spaces.setPortal(portal));
+    const Location eye{1, {0, 0, 2}};
+    const SightTarget visitor{"visitor", {2, {0, 0, 102}}, {}};
+    const ayt::entity::SpaceRayQuery unblocked = [](
+        ayt::entity::SpaceRegionId, const ayt::math::Ray&, float) {
+        return std::optional<ayt::entity::SpaceLocalHit>{{false, 0}};
+    };
+    ConnectedSpaceSightTravel sight(spaces, unblocked);
+    auto path = sight.path(eye, visitor);
+    CHECK(path && path.value && std::abs(path.value->distance - 3.0) < 0.01);
+    CHECK(path.value->apparentAim.z < eye.position.z);
+    struct Clear final : VisibilityQuery {
+        int calls = 0;
+        Result<bool> clear(Location, const SightTarget&) override {
+            ++calls;
+            return {Error::None, true};
+        }
+    } clear;
+    PerceptionMemory memory({5.0, 0.6, 4, 4});
+    auto seen = memory.update(1, eye, {0, 0, -1}, std::array{visitor}, {},
+        eye, clear, nullptr, &sight);
+    CHECK(seen && seen.value.mode == PursuitMode::Chase
+        && seen.value.goal == visitor.location && clear.calls == 0);
+    CHECK(memory.rememberedCount() == 1);
+
+    const ayt::entity::SpaceRayQuery blocked = [](
+        ayt::entity::SpaceRegionId region, const ayt::math::Ray&, float) {
+        return std::optional<ayt::entity::SpaceLocalHit>{
+            {region == 1, 0.5f}};
+    };
+    ConnectedSpaceSightTravel wall(spaces, blocked);
+    CHECK(wall.path(eye, visitor) && !wall.path(eye, visitor).value);
+    PerceptionMemory hidden;
+    auto unseen = hidden.update(1, eye, {0, 0, -1}, std::array{visitor}, {},
+        eye, clear, nullptr, &wall);
+    CHECK(unseen && unseen.value.mode == PursuitMode::Return);
+    const ayt::entity::SpaceRayQuery failed = [](
+        ayt::entity::SpaceRegionId, const ayt::math::Ray&, float)
+        -> std::optional<ayt::entity::SpaceLocalHit> { return std::nullopt; };
+    ConnectedSpaceSightTravel broken(spaces, failed);
+    PerceptionMemory rollback;
+    CHECK(rollback.update(1, eye, {0, 0, -1}, std::array{visitor}, {},
+        eye, clear, nullptr, &broken).error == Error::QueryFailed);
+    CHECK(rollback.rememberedCount() == 0);
+    CHECK(rollback.update(1, eye, {0, 0, -1}, std::array{visitor}, {},
+        eye, clear, nullptr, &sight));
+    ConnectedSpaceSightTravel unavailable(spaces, unblocked, 128,
+        [](RegionId region) { return region != 2; });
+    CHECK(unavailable.path(eye, visitor) && !unavailable.path(eye, visitor).value);
+    ConnectedSpaceSightTravel budget(spaces, unblocked, 0);
+    CHECK(budget.path(eye, visitor).error == Error::Budget);
+    portal.enabled = false;
+    CHECK(spaces.setPortal(portal));
+    CHECK(sight.path(eye, visitor) && !sight.path(eye, visitor).value);
+}
 } // namespace
 
 TEST_MAIN(
@@ -376,4 +446,5 @@ TEST_MAIN(
     RUN(physics_ray_uses_world_identity_and_region_mask);
     RUN(connected_space_sound_follows_directed_resident_portals);
     RUN(connected_space_sound_accounts_for_portal_crossing_cost);
+    RUN(connected_space_sight_uses_the_actual_opening_and_keeps_memory_atomic);
 )

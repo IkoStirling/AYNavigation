@@ -107,6 +107,29 @@ This is still a range approximation: opening area, walls, diffraction and
 frequency-dependent attenuation are not modeled. Sound event production and NPC task policy remain
 with the Host/game.
 
+`ConnectedSpaceSightTravel` supplies an optional one-hop visual route through
+the same rigid `ConnectedSpaces` openings. It maps the target's aim point back
+through each direct opening, traces the actual opening with a region-local ray
+callback, and returns apparent aim and traveled distance for range/cone checks.
+Occluders, a closed/missed opening, unloaded target region or disabled portal
+prevent sight. The callback excludes the observer and treats the target collider
+as transparent; the Host supplies current region-filtered physics rays.
+`PerceptionMemory::update` uses this service only for a target in another region;
+same-region vision keeps the existing `VisibilityQuery`. Failed portal/ray
+queries abort the entire memory update. This is a one-hop visual contract, not
+recursive portal visibility.
+
+The optional `AYNavigation::PerceptionJson` target also offers
+`commitPerceptionWorldTick`: it stages one NPC's memory and pursuit decision,
+checks a caller-captured persistent ID/Entity generation/World epoch, asks the
+game to save a complete World candidate, then publishes memory and its tick
+receipt. Exact tick/fingerprint replay returns the saved decision without
+resensing; a changed fingerprint is rejected. Its bounded version-1 JSON
+section keeps identity, memory, heard-event receipts and the last decision so
+the game can resubmit a lost Behavior command after restart with its own stable
+task ID and priority policy. The game saves this section alongside the NPC and
+other World sections in one failure-atomic slot.
+
 Run `AYNavigationSpatialAwarenessExample` for a small baked 3D room where one simulated NPC
 follows chase, search, heard-location and home goals through the existing Navigator.
 `AYNavigationSpatialAwarenessTest` covers obstacle detours, region load/unload/revision,

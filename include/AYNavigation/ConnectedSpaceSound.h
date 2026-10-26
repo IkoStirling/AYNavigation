@@ -12,7 +12,7 @@ namespace ayt::navigation {
 /// Approximate sound travel through the same directed ConnectedSpaces portals
 /// used by movement and view planning. Intra-region travel uses straight-line
 /// distance to portal centers; opening geometry, walls, diffraction and
-/// diffraction and acoustic attenuation remain Host/game policy. Add reverse portals when
+/// acoustic attenuation remain Host/game policy. Add reverse portals when
 /// sound should travel both ways. Query at a quiescent topology boundary.
 class ConnectedSpaceSoundTravel final : public SoundTravelQuery {
 public:

@@ -46,6 +46,21 @@ public:
         Location listener, const SoundStimulus& sound) = 0;
 };
 
+/// A cross-region visible route and the target's apparent aim in the
+/// observer's region. Distance includes portal travel, not Euclidean distance
+/// between unrelated region coordinates. The query owns occlusion checking.
+struct SightPath {
+    Vec3 apparentAim;
+    double distance = 0.0;
+};
+class SightTravelQuery {
+public:
+    virtual ~SightTravelQuery() = default;
+    /// No route/blocked sight is nullopt; failure aborts memory publication.
+    virtual Result<std::optional<SightPath>> path(
+        Location eye, const SightTarget& target) = 0;
+};
+
 struct PerceptionConfig {
     double visualRange = 15.0;
     double halfAngleRadians = 1.0;
@@ -92,7 +107,8 @@ public:
         std::span<const SightTarget> targets,
         std::span<const SoundStimulus> sounds,
         Location home, VisibilityQuery& visibility,
-        SoundTravelQuery* soundTravel = nullptr);
+        SoundTravelQuery* soundTravel = nullptr,
+        SightTravelQuery* sightTravel = nullptr);
     /// Call after a successful region unload, or when retiring all stimuli in
     /// that region. Clears remembered targets and sound deduplication without
     /// retaining or querying transient World entities.

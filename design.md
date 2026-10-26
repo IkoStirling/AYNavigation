@@ -351,12 +351,22 @@ retention age and entry budgets in temporary maps before swapping them into the
 live memory. A rejected restore keeps the previous tick and records. The Host
 persists the snapshot with the NPC's stable identity, restores before advancing
 fixed ticks and drops records for regions no longer loaded with `forgetRegion`.
-The optional `AYNavigation::PerceptionJson` codec stores that owner in an
+The optional `AYNavigation::PerceptionJson` codec stores memory alone in an
 `AliyatPerceptionMemory` schema-1 JSON section capped at 1 MiB. Encode
 canonicalizes target/sound order via a temporary validated memory; decode
 validates types, finite positions, counts and the full `restore` contract
 before replacing the caller output. This codec has no independent file path;
 the game owns complete-slot SaveGame composition and NPC identity mapping.
+`PerceptionWorldCommit` adds an optional identity-bound candidate. It copies
+memory, updates one fixed tick, rechecks the stable NPC ID, Entity generation
+and World epoch through a game-supplied preflight, then lets the game save its
+whole World slot before publishing memory and tick receipt. The saved decision
+is retained with the fingerprint so exact replay can resubmit a Behavior
+command without re-sensing; the game uses a stable task ID and its own priority
+policy to avoid duplicate commands. The bounded version-1 JSON wrapper records
+identity, receipt, last decision and the existing memory section. Decode
+validates the whole wrapper in a temporary value; the game restores only after
+matching the current NPC and World identities. This is not automatic ECS save.
 An optional `SoundTravelQuery` can supply a route distance for each unheard
 sound. A successful empty route leaves the event eligible; a failed or invalid
 query rolls back the entire fixed-step update. The default remains same-region
@@ -376,6 +386,16 @@ the call. The bounded O(P²) search fails when the eligible portal count exceeds
 the configured limit. This does not model aperture, wall occlusion, diffraction,
 frequency-dependent attenuation or acoustic material response. A Host may implement `SoundTravelQuery`
 with those rules without changing perception memory.
+Optional `SightTravelQuery` extends visual memory beyond one region. A successful
+one-hop route supplies an apparent aim in the listener's region and a traveled
+distance for cone/range ordering; the service itself owns occlusion. An empty
+route is invisible, and a failed query rolls back the whole memory update.
+`ConnectedSpaceSightTravel` reverse-maps the aim through each eligible direct
+opening, then uses `ConnectedSpaces::traceRay` and a region-filtered local ray
+callback to confirm the ray actually crosses that opening without a nearer
+occluder. It rejects disabled/unloaded destinations, caps candidate portals,
+and never assumes Euclidean distance across unrelated region coordinates.
+It is one-hop; recursive portal sight remains explicit Host policy.
 
 ## 11. Optional Scene World and Physics query adapter
 
@@ -400,8 +420,10 @@ and `SpacePhysicsRoutes`. It resolves target identity afresh each query, casts o
 within one region's physics layer, accepts a current target-body hit, and fails
 closed on query error, missing identity/route, or an incorrectly returned
 observer self-hit. `raycastSyncIgnoringBody` excludes one exact generation-checked
-observer body in Jolt; unsupported query backends fail closed. Cross-region portal sight,
-sensor scheduling, sound emission, live Jolt integration tests, and arbitrary mesh
+observer body in Jolt; unsupported query backends fail closed. The one-hop
+portal sight adapter uses a supplied per-region ray callback; adapting actual
+Jolt filters for both observer and target, sensor scheduling, sound emission,
+live Jolt integration tests, and arbitrary mesh
 geometry extraction remain separate Host/adapter work. The focused adapter test
 uses real World entities and a fake `IPhysicsQuery` to validate the query contract;
 AYPhysics tests cover the actual nearest-hit skip in Jolt.
